@@ -32,6 +32,12 @@ PRODUCTS = [
     dict(file="10-Custos-de-Receitas-Angolanas/Custos_Receitas_Angolanas_7000Kz.xlsx", sheet="Receitas", title="Custos de Receitas Angolanas", price=7000, description="Saiba quanto cada prato realmente custa antes de definir o preço. Registe ingredientes, calcule o custo por receita e por porção e consulte preços de venda sugeridos.", tag="Restauração"),
     dict(file="11-Centro-de-Formacao-Tecnico-Profissional/Gestao_Centro_Formacao_Tecnico_Profissional_25000Kz.xlsx", sheet="Cursos", title="Gestão de Centro de Formação Técnico-Profissional", price=25000, description="Deixe de controlar o centro em folhas separadas. Organize cursos, formandos, matrículas, propinas e pagamentos; acompanhe presenças, notas e certificados num único ficheiro, com painel automático. Os cursos e preços de exemplo são editáveis.", tag="Formação Profissional"),
     dict(file="12-Centro-de-Formacao-KIAZOP/KIAZOP_Sistema_Propinas_35000Kz.xlsx", sheet="CURSOS", start_column=2, title="Sistema de Propinas KIAZOP", price=35000, description="Gerencie 26 cursos, turmas, matrículas e cobranças num sistema integrado. Consulte recibos, dívidas e relatórios; organize salas, formadores e o caixa do centro. Esta edição abre sem senha e foi limpa de registos pessoais de exemplo.", tag="Gestão de Formação"),
+    dict(file="13-Escola-Gestao-de-Escola/Gestao_Escola_25000Kz.xlsx", sheet="Alunos", title="Gestão de Escola", price=25000, description="Gestão escolar completa para directores e secretarias: alunos, turmas, professores, disciplinas, frequência e notas num só ficheiro, com painel de indicadores.", tag="Educação"),
+    dict(file="14-Escola-Controle-de-Alunos-e-Notas/Controle_Alunos_Notas_12000Kz.xlsx", sheet="Notas", title="Controle de Alunos e Notas", price=12000, description="Tenha o cadastro de alunos, notas e frequência organizado. Acompanhe o desempenho por turma e disciplina e identifique alunos com dificuldades antes da reunião de pais.", tag="Educação"),
+    dict(file="15-Escola-Cobranca-de-Mensalidade-Escolar/Cobranca_Mensalidade_Escolar_10000Kz.xlsx", sheet="Mensalidades", title="Cobrança de Mensalidade Escolar", price=10000, description="Cobre mensalidades sem confusão. Registe mensalidades, recebimentos, atrasos e emissão de recibos e acompanhe a receita da escola.", tag="Educação"),
+    dict(file="16-Centro-Controle-de-Presenca-de-Formandos/Controle_Presenca_Formandos_8000Kz.xlsx", sheet="Presença", title="Controle de Presença de Formandos", price=8000, description="Controle de presença de formandos por turma e módulo. Marque presença diariamente, consulte resumos por curso e identifique faltas acumuladas.", tag="Formação Profissional"),
+    dict(file="17-Centro-Gestao-de-Certificates/Gestao_Certificates_10000Kz.xlsx", sheet="Certificates", title="Gestão de Certificates", price=10000, description="Emitir e validar certificados com confiança. Organize a base de dados de certificados, emissão, validade e consulta por número de certificado.", tag="Formação Profissional"),
+    dict(file="18-Centro-Controle-de-Salas-e-Horarios/Controle_Salas_Horarios_8000Kz.xlsx", sheet="Reservas", title="Controle de Salas e Horários", price=8000, description="Otimize a ocupação das salas do centro. Defina horários e salas, registre reservas e evite conflitos de uso entre turmas e formadores.", tag="Formação Profissional"),
 ]
 
 STEPS = [
@@ -71,6 +77,24 @@ STEPS = [
     ["Configure cursos, turmas, salas e formadores do centro.",
      "Registe matrículas e acompanhe cobranças e pagamentos.",
      "Consulte recibos, dívidas, relatórios e movimento de caixa."],
+    ["Abra a planilha e personalize a escola, o ano letivo e o período no Painel.",
+     "Cadastre alunos, turmas, professores e disciplinas nas folhas correspondentes.",
+     "Acompanhe frequência e notas e consulte o Painel de indicadores antes das reuniões de pais."],
+    ["Cadastre os alunos e as turmas no início do período letivo.",
+     "Registe as notas e a frequência por disciplina e aluno.",
+     "Consulte médias, aprovações e alunos com dificuldades no Resumo."],
+    ["Cadastre alunos, cursos e os valores das mensalidades.",
+     "Registe cada recebimento e acompanhe os atrasos por aluno.",
+     "Emitir recibos e consultar a receita no Resumo da escola."],
+    ["Configure cursos, turmas, formadores e períodos.",
+     "Registe a presença diária por formando.",
+     "Consulte os resumos por turma e identifique as faltas acumuladas."],
+    ["Cadastre os cursos, módulos e formandos habilitados.",
+     "Registe a emissão dos certificados com data e validade.",
+     "Valide certificados pelo número e consulte o resumo da base."],
+    ["Cadastre as salas, capacidades e restrições de uso.",
+     "Defina os horários e registe as reservas por turma ou curso.",
+     "Consulte a ocupação das salas e evite conflitos de agenda."],
 ]
 
 def col_num(ref):
@@ -96,6 +120,18 @@ def preview_name(product):
 
 
 def make_preview(product):
+    """Render a spreadsheet-style preview PNG for a workbook product.
+
+    Uses svglib/reportlab when available; falls back to a Pillow renderer so the
+    site can be rebuilt on machines without the heavy rendering dependencies.
+    """
+    try:
+        _make_preview_svg(product)
+    except ImportError:
+        _make_preview_pil(product)
+
+
+def _make_preview_svg(product):
     from reportlab.graphics import renderPDF
     from svglib.svglib import svg2rlg
     import pymupdf
@@ -249,11 +285,139 @@ def make_preview(product):
     pixmap = doc[0].get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
     (PUBLIC / product["preview"]).write_bytes(pixmap.tobytes("png"))
 
+
+def _make_preview_pil(product):
+    """Render a spreadsheet-style preview PNG using Pillow (no heavy deps)."""
+    from PIL import Image, ImageDraw, ImageFont
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+
+    try:
+        f_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
+        f_head = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 11)
+        f_cell = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+    except OSError:
+        f_title = f_head = f_cell = ImageFont.load_default()
+
+    path = PUBLIC / product["file"]
+    wb = load_workbook(path, data_only=False)
+    ws = wb[product["sheet"]]
+
+    n_cols = 12
+    col_widths = []
+    for idx in range(1, n_cols + 1):
+        dim = ws.column_dimensions.get(get_column_letter(idx))
+        width = dim.width if dim is not None and dim.width else 12
+        col_widths.append(max(78, min(210, int(width * 7) + 12)))
+    n_rows = 9
+    row_heights = []
+    for r in range(4, 4 + n_rows):
+        dim = ws.row_dimensions.get(r)
+        height = dim.height if dim is not None and dim.height else 22
+        row_heights.append(max(26, min(56, int(height) + 8)))
+
+    margin = 26
+    top = 64
+    header_h = 36
+    sheet_w = margin * 2 + sum(col_widths)
+    sheet_h = top + header_h + sum(row_heights)
+    tabs_h = 34
+    img_w = sheet_w + 40
+    img_h = sheet_h + tabs_h + 24
+
+    scale = 1.0
+    if img_w > 1400:
+        scale = 1400 / img_w
+    img = Image.new("RGB", (int(img_w * scale) + 40, int(img_h * scale) + 40), "#f4f6f5")
+    draw = ImageDraw.Draw(img)
+
+    def sc(v):
+        return int(v * scale)
+
+    # Sheet background
+    draw.rounded_rectangle([sc(20), sc(20), sc(img_w - 20), sc(img_h - 20)], radius=14, fill="#f4f6f5")
+    draw.rounded_rectangle([sc(24), sc(24), sc(img_w - 24), sc(sheet_h + 24)], radius=10, fill="#ffffff")
+
+    # Title bar
+    draw.rounded_rectangle([sc(24), sc(24), sc(sheet_w + 24), sc(64)], radius=10, fill="#163A2A")
+    draw.ellipse([sc(40), sc(44), sc(56), sc(60)], fill="#ff6b65")
+    draw.ellipse([sc(62), sc(44), sc(78), sc(60)], fill="#ffc24d")
+    draw.ellipse([sc(84), sc(44), sc(100), sc(60)], fill="#44c78a")
+    title = f"Microsoft Excel  •  {product['title']}"
+    tw = draw.textlength(title, font=f_title)
+    draw.text((sc((sheet_w + 24 - tw) / 2 + 24), sc(38)), title, font=f_title, fill="#718078")
+
+    # Header row
+    headers = []
+    for c in range(1, n_cols + 1):
+        cell = ws.cell(4, c)
+        headers.append(str(cell.value or ""))
+    x = margin
+    for cw, text in zip(col_widths, headers):
+        draw.rectangle([sc(x), sc(top), sc(x + cw), sc(top + header_h)], fill="#26734D")
+        if text:
+            tw = draw.textlength(text, font=f_head)
+            draw.text((sc(x + (cw - tw) / 2), sc(top + 12)), text, font=f_head, fill="#ffffff")
+        x += cw
+
+    # Data rows
+    y = top + header_h
+    for ri, rh in enumerate(row_heights):
+        row_idx = 4 + ri
+        x = margin
+        for ci, cw in enumerate(col_widths, 1):
+            cell = ws.cell(row_idx, ci)
+            value = cell.value
+            fill_color = "#ffffff"
+            try:
+                fc = cell.fill
+                if fc and fc.fill_type == "solid" and fc.fgColor and fc.fgColor.rgb:
+                    rgb = fc.fgColor.rgb
+                    if isinstance(rgb, str) and len(rgb) >= 6:
+                        fill_color = "#" + rgb[-6:]
+            except Exception:
+                pass
+            draw.rectangle([sc(x), sc(y), sc(x + cw), sc(y + rh)], fill=fill_color, outline="#e1e6e3")
+            if value is not None and not (isinstance(value, str) and value.startswith("=")):
+                text = str(value)
+                font = f_cell
+                tw = draw.textlength(text, font=font)
+                if tw > sc(cw) - 16:
+                    while text and draw.textlength(text + "…", font=font) > sc(cw) - 16:
+                        text = text[:-1]
+                    text += "…"
+                draw.text((sc(x + 8), sc(y + (rh - 16) / 2)), text, font=font, fill="#26352e")
+            x += cw
+        y += rh
+
+    # Sheet tabs
+    tab_y = sheet_h + 20
+    cursor = margin
+    for name in wb.sheetnames[:12]:
+        tw = max(78, min(148, len(name) * 9 + 26))
+        active = name == product["sheet"]
+        draw.rounded_rectangle([sc(cursor), sc(tab_y), sc(cursor + tw), sc(tab_y + 28)], radius=6,
+                               fill="#e9f4ed" if active else "#f5f7f6",
+                               outline="#85b99a" if active else "#e1e6e3")
+        twn = draw.textlength(name[:16], font=f_cell)
+        draw.text((sc(cursor + (tw - twn) / 2), sc(tab_y + 9)), name[:16],
+                  font=f_cell, fill="#17633c" if active else "#77827c")
+        cursor += tw + 6
+        if cursor > sheet_w - 80:
+            break
+
+    img.save(PUBLIC / product["preview"], "PNG")
+
+
 SKIP_PREVIEWS = "--skip-previews" in sys.argv
+FORCE_PREVIEWS = "--force-previews" in sys.argv
 for product in PRODUCTS:
     product["preview"] = preview_name(product)
 if not SKIP_PREVIEWS:
     for product in PRODUCTS:
+        path = PUBLIC / product["preview"]
+        if path.exists() and not FORCE_PREVIEWS:
+            continue
         make_preview(product)
 
 cards = []
@@ -272,9 +436,9 @@ html = '''<!doctype html>
 <style>
 :root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green)}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
 </style></head><body>
-<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e descarregue directamente o ficheiro.</p><a class="download-all" href="imagens-planilhas-para-site.zip" download>↓ Baixar as 12 imagens PNG (ZIP)</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b></span></div></header>
-<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e descarregar o ficheiro.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
-<div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. Os botões descarregam directamente os ficheiros Excel (.xlsx) incluídos nesta colecção. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
+<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e peça a sua planilha directamente no WhatsApp.</p><a class="download-all" href="https://wa.me/244942739225?text=Ol%C3%A1%21%20Tenho%20interesse%20em%20comprar%20planilhas%20Excel%20Premium%20para%20Angola.">↗ Pedir no WhatsApp</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b> entregues pelo WhatsApp</span></div></header>
+<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e pedir pelo WhatsApp.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
+<div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. As planilhas não estão disponíveis para download: ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
 html = html.replace("10</b> planilhas disponíveis", f"{len(PRODUCTS)}</b> planilhas disponíveis")
 (PUBLIC / "index.html").write_text(html, encoding="utf-8")
 
@@ -299,8 +463,6 @@ PROD_STYLES = (
     ".button span{margin-left:4px;font-size:15px}"
     ".button.wa{background:#d5ff83;color:#153b28}"
     ".button.wa:hover{background:#e2ffad;transform:translateY(-1px)}"
-    ".button.ghost{background:transparent;border:1px solid #ffffff40;color:#fff}"
-    ".button.ghost:hover{background:#ffffff14}"
     ".hero-foot{display:flex;gap:18px;align-items:center;margin-top:26px;color:#d6e2d9;font-size:13px;flex-wrap:wrap}"
     ".hero-foot b{color:#fff}"
     ".wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}"
@@ -311,6 +473,8 @@ PROD_STYLES = (
     ".steps ol{margin:0;padding-left:22px;color:#3c4a42;font-size:14px;line-height:2}"
     ".steps li{margin-bottom:8px}"
     ".steps li::marker{color:var(--green);font-weight:800}"
+    ".nota{margin:22px 0 0;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}"
+    ".nota strong{color:#2d4637}"
     ".related{margin-top:44px}"
     ".related h2{font-size:22px;letter-spacing:-.035em;margin:0 0 16px}"
     ".mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
@@ -331,7 +495,6 @@ def build_product_pages():
     for i, p in enumerate(PRODUCTS, 1):
         steps = STEPS[i - 1]
         steps_html = "\n".join(f"      <li>{escape(s)}</li>" for s in steps)
-        download = escape("../" + p["file"], quote=True)
         preview = escape("../" + p["preview"], quote=True)
         price = format(p["price"], ",").replace(",", ".")
         wa_text = urllib.parse.quote(
@@ -349,20 +512,21 @@ def build_product_pages():
                 f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape('../' + q['preview'])}" alt="Pré-visualização da planilha {escape(q['title'])}" loading="lazy"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
             )
         page_html = f'''<!doctype html>
-<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original e descarregue a planilha {escape(p['title'])} em Excel por {price} Kz."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
+<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original da planilha {escape(p['title'])} em Excel por {price} Kz. Peça pelo WhatsApp."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
 <style>{PROD_STYLES}</style></head>
 <body>
 <header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><a class="crumb" href="../index.html">← Ver todas as planilhas</a>
 <h1>{escape(p['title'])}</h1>
 <p>{escape(p['description'])}</p>
-<div class="cta-row"><a class="button wa" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a><a class="button ghost" href="{download}" download>Baixar Excel <span aria-hidden="true">↓</span></a></div>
-<div class="hero-foot"><span><b>{price} Kz</b></span><span>·</span><span>{escape(p['tag'])}</span><span>·</span><span>Planilha #{i:02d}</span><span>·</span><span>Ficheiro <b>.xlsx</b></span></div></header>
+<div class="cta-row"><a class="button wa" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a></div>
+<div class="hero-foot"><span><b>{price} Kz</b></span><span>·</span><span>{escape(p['tag'])}</span><span>·</span><span>Planilha #{i:02d}</span><span>·</span><span>Ficheiro <b>.xlsx</b> entregue pelo WhatsApp</span></div></header>
 <main class="wrap">
 <section class="preview-block"><img src="{preview}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}"><p class="caption">Pré-visualização da folha original — aba “{escape(p['sheet'])}” da planilha {escape(p['title'])}.</p></section>
 <section class="steps"><h2>Como usar esta planilha</h2>
 <ol>
 {steps_html}
 </ol></section>
+<section class="nota"><strong>Como receber a planilha:</strong> ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização.</section>
 <section class="related"><h2>Outras planilhas</h2><div class="mini-grid">
 {chr(10).join(rel)}
 </div></section>
