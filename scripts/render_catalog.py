@@ -8,9 +8,7 @@ import re
 import unicodedata
 import io
 
-from reportlab.graphics import renderPDF
-from svglib.svglib import svg2rlg
-import pymupdf
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
@@ -36,6 +34,45 @@ PRODUCTS = [
     dict(file="12-Centro-de-Formacao-KIAZOP/KIAZOP_Sistema_Propinas_35000Kz.xlsx", sheet="CURSOS", start_column=2, title="Sistema de Propinas KIAZOP", price=35000, description="Gerencie 26 cursos, turmas, matrículas e cobranças num sistema integrado. Consulte recibos, dívidas e relatórios; organize salas, formadores e o caixa do centro. Esta edição abre sem senha e foi limpa de registos pessoais de exemplo.", tag="Gestão de Formação"),
 ]
 
+STEPS = [
+    ["Abra a folha no Excel e seleccione o mês de processamento.",
+     "Registe os colaboradores e introduza os valores salariais e dados do período.",
+     "Confira INSS, IRT, descontos e salário líquido antes de fechar a folha."],
+    ["Cadastre os produtos, preços e stock inicial.",
+     "Registe compras e vendas à medida que acontecem.",
+     "Acompanhe caixa, stock baixo e indicadores no painel."],
+    ["Introduza os valores da operação ou do rendimento a analisar.",
+     "Confira ou ajuste as taxas aplicáveis no ficheiro.",
+     "Compare o cálculo e valide as taxas legais em vigor antes de tomar decisões."],
+    ["Configure o plano de contas da empresa.",
+     "Registe cada movimento nas contas correspondentes.",
+     "Confira o equilíbrio dos lançamentos e consulte os relatórios financeiros."],
+    ["Abra o diário e escolha a data da actividade.",
+     "Registe trabalhos, clima, ocorrências, equipa e materiais recebidos.",
+     "Consulte o resumo mensal para acompanhar a execução da obra."],
+    ["Introduza área, quantidades e elementos do projecto.",
+     "Adicione materiais, serviços, mão-de-obra e os parâmetros de BDI.",
+     "Confira os custos calculados e prepare a proposta para o cliente."],
+    ["Adicione os produtos ou serviços que pretende comprar.",
+     "Registe as cotações de até quatro fornecedores por produto.",
+     "Compare os valores e use o ranking para apoiar a escolha."],
+    ["Defina o saldo inicial e as suas metas financeiras.",
+     "Registe cada rendimento e despesa na categoria correspondente.",
+     "Acompanhe o saldo, as dívidas e a distribuição mensal do orçamento."],
+    ["Escolha os hábitos que quer acompanhar e defina a sua rotina.",
+     "Marque o progresso diariamente ao longo do mês.",
+     "Registe a leitura e as reflexões no espaço devocional."],
+    ["Cadastre os ingredientes e os respectivos preços de compra.",
+     "Indique as quantidades usadas em cada receita.",
+     "Confira custo por receita e por porção antes de definir o preço de venda."],
+    ["Configure cursos, turmas, formadores e propinas.",
+     "Registe formandos, matrículas, presenças, notas e pagamentos.",
+     "Acompanhe o painel e consulte os dados para recibos e certificados."],
+    ["Configure cursos, turmas, salas e formadores do centro.",
+     "Registe matrículas e acompanhe cobranças e pagamentos.",
+     "Consulte recibos, dívidas, relatórios e movimento de caixa."],
+]
+
 def col_num(ref):
     letters = re.match(r"[A-Z]+", ref or "")
     n = 0
@@ -52,7 +89,16 @@ def color_from(color, fallback):
     indexed = color.attrib.get("indexed")
     return {"8": "#000000", "9": "#ffffff", "10": "#ff0000", "11": "#00ff00", "12": "#0000ff", "13": "#ffff00"}.get(indexed, fallback)
 
+def preview_name(product):
+    slug = unicodedata.normalize("NFKD", product["title"].lower()).encode("ascii", "ignore").decode("ascii")
+    filename = re.sub(r"[^a-z0-9]+", "-", slug).strip("-") + ".png"
+    return "previews/" + filename
+
+
 def make_preview(product):
+    from reportlab.graphics import renderPDF
+    from svglib.svglib import svg2rlg
+    import pymupdf
     path = PUBLIC / product["file"]
     with ZipFile(path) as z:
         workbook = ET.fromstring(z.read("xl/workbook.xml"))
@@ -196,36 +242,134 @@ def make_preview(product):
             if cursor > width - 72:
                 break
         out.append('</svg>')
-    slug = unicodedata.normalize("NFKD", product["title"].lower()).encode("ascii", "ignore").decode("ascii")
-    filename = re.sub(r"[^a-z0-9]+", "-", slug).strip("-") + ".png"
-    product["preview"] = "previews/" + filename
+    product["preview"] = preview_name(product)
     drawing = svg2rlg(io.StringIO("\n".join(out)))
     pdf = renderPDF.drawToString(drawing)
     doc = pymupdf.open(stream=pdf, filetype="pdf")
     pixmap = doc[0].get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), alpha=False)
     (PUBLIC / product["preview"]).write_bytes(pixmap.tobytes("png"))
 
+SKIP_PREVIEWS = "--skip-previews" in sys.argv
 for product in PRODUCTS:
-    make_preview(product)
+    product["preview"] = preview_name(product)
+if not SKIP_PREVIEWS:
+    for product in PRODUCTS:
+        make_preview(product)
 
 cards = []
 for i, p in enumerate(PRODUCTS, 1):
     download = escape(p["file"], quote=True)
+    page = escape(f"produtos/{i}.html", quote=True)
     cards.append(f'''<article class="card">
-      <a class="preview" href="{download}" download aria-label="Baixar {escape(p['title'])} em Excel"><img src="{escape(p['preview'])}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" loading="lazy"><span class="zoom">Pré-visualização da folha original</span></a>
+      <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(p['preview'])}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" loading="lazy"><span class="zoom">Pré-visualização da folha original</span></a>
       <div class="card-body"><div class="meta"><span class="tag">{escape(p['tag'])}</span><span class="number">#{i:02d}</span></div>
-      <h2>{escape(p['title'])}</h2><p>{escape(p['description'])}</p>
-      <div class="buy"><strong>{format(p['price'], ',').replace(',', '.')} Kz</strong><a class="button" href="{download}" download>Baixar Excel <span aria-hidden="true">↓</span></a></div></div>
+      <h2><a href="{page}">{escape(p['title'])}</a></h2><p>{escape(p['description'])}</p>
+      <div class="buy"><strong>{format(p['price'], ',').replace(',', '.')} Kz</strong><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div>
     </article>''')
 
 html = '''<!doctype html>
 <html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="Planilhas Excel Premium para negócios, finanças, construção e formação profissional em Angola. Veja imagens originais, preços em Kz e baixe directamente."><title>Planilhas Excel Premium — Angola</title>
 <style>
-:root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
+:root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green)}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
 </style></head><body>
 <header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e descarregue directamente o ficheiro.</p><a class="download-all" href="imagens-planilhas-para-site.zip" download>↓ Baixar as 12 imagens PNG (ZIP)</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b></span></div></header>
-<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Baixar Excel” para descarregar o ficheiro original.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
-<div class="note"><strong>Nota:</strong> Os botões descarregam directamente os ficheiros Excel (.xlsx) incluídos nesta colecção. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
+<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e descarregar o ficheiro.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
+<div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. Os botões descarregam directamente os ficheiros Excel (.xlsx) incluídos nesta colecção. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
 html = html.replace("10</b> planilhas disponíveis", f"{len(PRODUCTS)}</b> planilhas disponíveis")
 (PUBLIC / "index.html").write_text(html, encoding="utf-8")
-print(f"Generated {len(PRODUCTS)} previews and public/index.html")
+
+import urllib.parse
+
+WA_NUMBER = "244942739225"
+SITE_HOST = "https://planilhas-ultra-angola-emanuelbaptistatheking01-9378.vercel.app"
+
+PROD_STYLES = (
+    ":root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}"
+    "*{box-sizing:border-box}"
+    "body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
+    ".hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:44px max(24px,calc((100% - 1160px)/2)) 46px}"
+    ".topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}"
+    ".dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}"
+    ".crumb{display:inline-flex;align-items:center;margin:16px 0 0;color:#d6e2d9;font-size:12px;font-weight:700;text-decoration:none;transition:color .2s}"
+    ".crumb:hover{color:#fff}"
+    ".hero h1{max-width:760px;font-size:clamp(30px,5vw,52px);line-height:1.05;letter-spacing:-.045em;margin:14px 0 12px}"
+    ".hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}"
+    ".cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}"
+    ".button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:12px 16px;border-radius:10px;transition:background .15s,transform .15s;display:inline-flex;align-items:center;gap:8px}"
+    ".button span{margin-left:4px;font-size:15px}"
+    ".button.wa{background:#d5ff83;color:#153b28}"
+    ".button.wa:hover{background:#e2ffad;transform:translateY(-1px)}"
+    ".button.ghost{background:transparent;border:1px solid #ffffff40;color:#fff}"
+    ".button.ghost:hover{background:#ffffff14}"
+    ".hero-foot{display:flex;gap:18px;align-items:center;margin-top:26px;color:#d6e2d9;font-size:13px;flex-wrap:wrap}"
+    ".hero-foot b{color:#fff}"
+    ".wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}"
+    ".preview-block{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px;box-shadow:0 7px 24px #14322108;margin-bottom:36px}"
+    ".preview-block img{display:block;width:100%;max-height:540px;object-fit:contain;border-radius:10px;background:#edf1ee}"
+    ".caption{margin:14px 0 0;color:var(--muted);font-size:12px;text-align:center}"
+    ".steps h2{font-size:24px;letter-spacing:-.035em;margin:0 0 16px}"
+    ".steps ol{margin:0;padding-left:22px;color:#3c4a42;font-size:14px;line-height:2}"
+    ".steps li{margin-bottom:8px}"
+    ".steps li::marker{color:var(--green);font-weight:800}"
+    ".related{margin-top:44px}"
+    ".related h2{font-size:22px;letter-spacing:-.035em;margin:0 0 16px}"
+    ".mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
+    ".mini{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 4px 16px #14322106;text-decoration:none;color:inherit;display:flex;transition:transform .2s,box-shadow .2s}"
+    ".mini:hover{transform:translateY(-3px);box-shadow:0 10px 24px #1432210d}"
+    ".mini .mi{width:104px;flex:none;background:#edf1ee;display:flex;align-items:center;justify-content:center;height:118px}"
+    ".mini .mi img{width:100%;height:100%;object-fit:contain}"
+    ".mini .mb{padding:12px 14px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0}"
+    ".mini .mb strong{font-size:14px;line-height:1.25}"
+    ".mini .mb span{font-size:12px;color:var(--muted)}"
+    ".mini .mb em{font-style:normal;font-size:11px;font-weight:700;color:var(--green)}"
+    "footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}"
+    "@media(max-width:720px){.hero{padding-top:36px;padding-bottom:38px}.mini-grid{grid-template-columns:1fr}.steps ol{font-size:13px;line-height:1.9}}"
+)
+
+def build_product_pages():
+    (PUBLIC / "produtos").mkdir(parents=True, exist_ok=True)
+    for i, p in enumerate(PRODUCTS, 1):
+        steps = STEPS[i - 1]
+        steps_html = "\n".join(f"      <li>{escape(s)}</li>" for s in steps)
+        download = escape("../" + p["file"], quote=True)
+        preview = escape("../" + p["preview"], quote=True)
+        price = format(p["price"], ",").replace(",", ".")
+        wa_text = urllib.parse.quote(
+            f"Olá! Tenho interesse na planilha {p['title']}. Preço: {price} Kz. "
+            f"Pré-visualização: {SITE_HOST}/produtos/{i}.html",
+            safe="",
+        )
+        wa = f"https://wa.me/{WA_NUMBER}?text={wa_text}"
+        rel = []
+        for j, q in enumerate(PRODUCTS, 1):
+            if j == i or len(rel) == 4:
+                continue
+            q_price = format(q["price"], ",").replace(",", ".")
+            rel.append(
+                f'''      <a class="mini" href="produtos/{j}.html"><div class="mi"><img src="{escape('../' + q['preview'])}" alt="Pré-visualização da planilha {escape(q['title'])}" loading="lazy"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
+            )
+        page_html = f'''<!doctype html>
+<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original e descarregue a planilha {escape(p['title'])} em Excel por {price} Kz."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
+<style>{PROD_STYLES}</style></head>
+<body>
+<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><a class="crumb" href="../index.html">← Ver todas as planilhas</a>
+<h1>{escape(p['title'])}</h1>
+<p>{escape(p['description'])}</p>
+<div class="cta-row"><a class="button wa" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a><a class="button ghost" href="{download}" download>Baixar Excel <span aria-hidden="true">↓</span></a></div>
+<div class="hero-foot"><span><b>{price} Kz</b></span><span>·</span><span>{escape(p['tag'])}</span><span>·</span><span>Planilha #{i:02d}</span><span>·</span><span>Ficheiro <b>.xlsx</b></span></div></header>
+<main class="wrap">
+<section class="preview-block"><img src="{preview}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}"><p class="caption">Pré-visualização da folha original — aba “{escape(p['sheet'])}” da planilha {escape(p['title'])}.</p></section>
+<section class="steps"><h2>Como usar esta planilha</h2>
+<ol>
+{steps_html}
+</ol></section>
+<section class="related"><h2>Outras planilhas</h2><div class="mini-grid">
+{chr(10).join(rel)}
+</div></section>
+</main>
+<footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer>
+</body></html>'''
+        (PUBLIC / "produtos" / f"{i}.html").write_text(page_html, encoding="utf-8")
+
+build_product_pages()
+print(f"Generated {len(PRODUCTS)} previews, public/index.html and {len(PRODUCTS)} product pages")
