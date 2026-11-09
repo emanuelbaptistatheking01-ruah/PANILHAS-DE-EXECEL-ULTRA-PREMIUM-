@@ -618,10 +618,10 @@ from catalog_home import build_home
 from catalog_product import build_product
 
 CARD_TPL = """<article class="card">
-      <a class="preview" href="produtos/__I__.html" aria-label="Ver detalhes da planilha __TITLE__"><img src="__SRC__" alt="Pré-visualização real da folha __SHEET__ da planilha __TITLE__" width="__W__" height="__H__" __LOAD__ decoding="async"><span class="zoom">Folha real</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
+      <a class="preview" href="oferta/__I__.html" aria-label="Ver detalhes da planilha __TITLE__"><img src="__SRC__" alt="Pré-visualização real da folha __SHEET__ da planilha __TITLE__" width="__W__" height="__H__" __LOAD__ decoding="async"><span class="zoom">Folha real</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
       <div class="card-body"><div class="meta"><span class="tag">__TAG__</span><span class="number">#__I2__</span></div>
-      <h3><a href="produtos/__I__.html">__TITLE__</a></h3><p>__DESC__</p>
-      <div class="buy"><strong>__PRICE__ Kz</strong><div class="buy-actions"><a class="btn-sm btn-out" href="produtos/__I__.html">Detalhes</a><a class="btn-sm btn-wa" href="__WA__">WhatsApp <span aria-hidden="true">↗</span></a></div></div></div></article>"""
+      <h3><a href="oferta/__I__.html">__TITLE__</a></h3><p>__DESC__</p>
+      <div class="buy"><strong>__PRICE__ Kz</strong><div class="buy-actions"><a class="btn-sm btn-out" href="oferta/__I__.html">Comprar</a><a class="btn-sm btn-wa" href="__WA__">WhatsApp <span aria-hidden="true">↗</span></a></div></div></div></article>"""
 
 cards = []
 for i, p in enumerate(PRODUCTS, 1):
@@ -671,4 +671,18 @@ def build_product_pages():
 
 
 build_product_pages()
-print(f"Generated {len(PRODUCTS)} previews, public/index.html and {len(PRODUCTS)} product pages")
+
+# ---------------------------------------------------------------- funil
+from catalog_funnel import build_all as build_funnel, PROTECT
+
+# preço "de" riscado: 30% acima, arredondado ao milhar
+for _i, _p in enumerate(PRODUCTS, 1):
+    PROTECT[_i] = {"was": int(round(_p["price"] * 1.30 / 1000.0)) * 1000}
+
+funnel = build_funnel(PRODUCTS)
+for rel, html in funnel.items():
+    dest = PUBLIC / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(html, encoding="utf-8")
+
+print(f"Generated {len(PRODUCTS)} previews, public/index.html, {len(PRODUCTS)} product pages and {len(funnel)} funnel pages")

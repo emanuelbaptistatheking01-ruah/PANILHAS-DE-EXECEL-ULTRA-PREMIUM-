@@ -104,7 +104,8 @@ def build_product(i, p, price, wa, steps, related, img_w, img_h):
     <aside class="buy-card">
       <span class="eyebrow">Preço único</span>
       <p class="price">{price} Kz<small>Ficheiro .xlsx completo</small></p>
-      <a class="btn btn-green" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a>
+      <a class="btn btn-green" href="../oferta/{i}.html">Comprar agora <span aria-hidden="true">→</span></a>
+      <p class="buy-note" style="margin-top:9px">Página de compra com entrega imediata no WhatsApp.</p>
       <p class="buy-note">Resposta habitual em poucos minutos, dentro do horário de atendimento.</p>
       <ul class="buy-list">
         <li>Ficheiro Excel (.xlsx) entregue na conversa</li>
