@@ -346,7 +346,7 @@ def build_product_pages():
                 continue
             q_price = format(q["price"], ",").replace(",", ".")
             rel.append(
-                f'''      <a class="mini" href="produtos/{j}.html"><div class="mi"><img src="{escape('../' + q['preview'])}" alt="Pré-visualização da planilha {escape(q['title'])}" loading="lazy"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
+                f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape('../' + q['preview'])}" alt="Pré-visualização da planilha {escape(q['title'])}" loading="lazy"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
             )
         page_html = f'''<!doctype html>
 <html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original e descarregue a planilha {escape(p['title'])} em Excel por {price} Kz."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
