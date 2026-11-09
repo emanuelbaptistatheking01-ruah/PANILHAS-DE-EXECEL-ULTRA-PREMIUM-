@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import re
 import unicodedata
 import io
+import urllib.parse
 
 import sys
 
@@ -14,10 +15,25 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
 PREVIEWS = PUBLIC / "previews"
 PREVIEWS.mkdir(parents=True, exist_ok=True)
+WA_NUMBER = "244942739225"
+SITE_HOST = "https://planilhas-ultra-angola-emanuelbaptistatheking01-9378.vercel.app"
 NS = {
     "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
+
+
+def wa_link(i, p, price):
+    """WhatsApp deep link with the product photo, price and product page link."""
+    image_url = f"{SITE_HOST}/{p['preview']}"
+    product_url = f"{SITE_HOST}/produtos/{i}.html"
+    text = (
+        f"Olá! Tenho interesse na planilha {p['title']}.\n"
+        f"Preço: {price} Kz.\n"
+        f"📷 Foto: {image_url}\n"
+        f"🔗 Ver a planilha: {product_url}"
+    )
+    return f"https://wa.me/{WA_NUMBER}?text={urllib.parse.quote(text, safe='')}"
 
 PRODUCTS = [
     dict(file="01-Folha-de-Salario-Angola/Folha_de_Salario_Angola_12000Kz.xlsx", sheet="Folha", title="Folha de Salário Angola", price=12000, description="Feche a folha salarial com mais organização e menos contas manuais. Registe a equipa e obtenha cálculos de INSS, IRT e salário líquido, com parâmetros editáveis e resumo para conferência.", tag="Recursos Humanos"),
@@ -422,30 +438,26 @@ if not SKIP_PREVIEWS:
 
 cards = []
 for i, p in enumerate(PRODUCTS, 1):
-    download = escape(p["file"], quote=True)
     page = escape(f"produtos/{i}.html", quote=True)
+    price = format(p["price"], ",").replace(",", ".")
+    wa = wa_link(i, p, price)
     cards.append(f'''<article class="card">
       <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(p['preview'])}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" loading="lazy"><span class="zoom">Pré-visualização da folha original</span></a>
       <div class="card-body"><div class="meta"><span class="tag">{escape(p['tag'])}</span><span class="number">#{i:02d}</span></div>
       <h2><a href="{page}">{escape(p['title'])}</a></h2><p>{escape(p['description'])}</p>
-      <div class="buy"><strong>{format(p['price'], ',').replace(',', '.')} Kz</strong><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div>
+      <div class="buy"><strong>{price} Kz</strong><div class="buy-actions"><a class="button wa-mini" href="{wa}">WhatsApp <span aria-hidden="true">↗</span></a><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div></div>
     </article>''')
 
 html = '''<!doctype html>
 <html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="Planilhas Excel Premium para negócios, finanças, construção e formação profissional em Angola. Veja imagens originais, preços em Kz e baixe directamente."><title>Planilhas Excel Premium — Angola</title>
 <style>
-:root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green)}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
+:root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green)}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.buy-actions{display:flex;gap:8px}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.button.wa-mini{background:#c8ee79;color:#163a2a;padding:8px 12px;font-size:11px}.button.wa-mini:hover{background:#d8f6a1}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
 </style></head><body>
 <header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e peça a sua planilha directamente no WhatsApp.</p><a class="download-all" href="https://wa.me/244942739225?text=Ol%C3%A1%21%20Tenho%20interesse%20em%20comprar%20planilhas%20Excel%20Premium%20para%20Angola.">↗ Pedir no WhatsApp</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b> entregues pelo WhatsApp</span></div></header>
 <main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e pedir pelo WhatsApp.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
 <div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. As planilhas não estão disponíveis para download: ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
 html = html.replace("10</b> planilhas disponíveis", f"{len(PRODUCTS)}</b> planilhas disponíveis")
 (PUBLIC / "index.html").write_text(html, encoding="utf-8")
-
-import urllib.parse
-
-WA_NUMBER = "244942739225"
-SITE_HOST = "https://planilhas-ultra-angola-emanuelbaptistatheking01-9378.vercel.app"
 
 PROD_STYLES = (
     ":root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}"
@@ -497,12 +509,7 @@ def build_product_pages():
         steps_html = "\n".join(f"      <li>{escape(s)}</li>" for s in steps)
         preview = escape("../" + p["preview"], quote=True)
         price = format(p["price"], ",").replace(",", ".")
-        wa_text = urllib.parse.quote(
-            f"Olá! Tenho interesse na planilha {p['title']}. Preço: {price} Kz. "
-            f"Pré-visualização: {SITE_HOST}/produtos/{i}.html",
-            safe="",
-        )
-        wa = f"https://wa.me/{WA_NUMBER}?text={wa_text}"
+        wa = wa_link(i, p, price)
         rel = []
         for j, q in enumerate(PRODUCTS, 1):
             if j == i or len(rel) == 4:
