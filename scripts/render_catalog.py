@@ -358,126 +358,249 @@ def _make_preview_svg(product):
 
 
 def _make_preview_pil(product):
-    """Render a spreadsheet-style preview PNG using Pillow (no heavy deps)."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Render a vivid, high-resolution spreadsheet preview (2x supersampled)."""
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
 
-    try:
-        f_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
-        f_head = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 11)
-        f_cell = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-    except OSError:
-        f_title = f_head = f_cell = ImageFont.load_default()
+    # Renders at 2x then downsamples: crisp text and smooth shadows.
+    SS = 2
+
+    def px(v):
+        return int(round(v * SS))
+
+    FONT_DIRS = ["/usr/share/fonts/truetype/dejavu/", "/usr/share/fonts/truetype/liberation/"]
+    def load_font(size, bold=True):
+        names = ["DejaVuSans-Bold.ttf"] if bold else ["DejaVuSans.ttf"]
+        if bold:
+            names.insert(0, "DejaVuSans-Bold.ttf")
+        for d in FONT_DIRS:
+            for n in names:
+                try:
+                    return ImageFont.truetype(d + n, px(size))
+                except OSError:
+                    continue
+        return ImageFont.load_default()
+
+    # ---- premium palette ----------------------------------------------
+    DEEP      = (9, 52, 32)        # header base
+    EMERALD   = (28, 107, 65)      # header highlight
+    MINT      = (233, 247, 224)    # soft cell tint
+    GOLD      = (201, 162, 39)
+    GOLD_L    = (230, 207, 139)
+    INK       = (24, 42, 32)
+    GRID      = (222, 231, 224)
+    WHITE     = (255, 255, 255)
+    CANVAS_A  = (245, 240, 226)
+    CANVAS_B  = (237, 230, 212)
 
     path = PUBLIC / product["file"]
-    wb = load_workbook(path, data_only=False)
+    wb = load_workbook(path, data_only=True)
     ws = wb[product["sheet"]]
 
-    n_cols = 12
+    # Trim to the columns/rows that actually carry data.
+    used_cols, used_rows = 0, 0
+    for row in ws.iter_rows(min_row=1, max_row=4 + 20, max_col=20):
+        for cell in row:
+            if cell.value is not None and str(cell.value).strip() != "":
+                used_cols = max(used_cols, cell.column)
+                used_rows = max(used_rows, cell.row)
+    n_cols = max(4, min(10, used_cols))
+    data_start = 5                      # row 4 is the column-header row
+    filled = 0
+    for r in range(data_start, data_start + 20):
+        # A row counts only if it carries real content beyond the row-number column.
+        if any(str(ws.cell(r, c).value or "").strip() for c in range(2, n_cols + 1)):
+            filled = r - data_start + 1
+        elif filled:
+            break
+    n_rows = max(3, min(9, filled or 3))
+
     col_widths = []
     for idx in range(1, n_cols + 1):
         dim = ws.column_dimensions.get(get_column_letter(idx))
         width = dim.width if dim is not None and dim.width else 12
-        col_widths.append(max(78, min(210, int(width * 7) + 12)))
-    n_rows = 9
+        col_widths.append(max(112, min(250, int(width * 8) + 16)))
     row_heights = []
-    for r in range(4, 4 + n_rows):
+    for r in range(data_start, data_start + n_rows):
         dim = ws.row_dimensions.get(r)
         height = dim.height if dim is not None and dim.height else 22
-        row_heights.append(max(26, min(56, int(height) + 8)))
+        row_heights.append(max(40, min(72, int(height) + 16)))
 
-    margin = 26
-    top = 64
-    header_h = 36
+    margin, top, header_h = 34, 86, 48
     sheet_w = margin * 2 + sum(col_widths)
     sheet_h = top + header_h + sum(row_heights)
-    tabs_h = 34
-    img_w = sheet_w + 40
-    img_h = sheet_h + tabs_h + 24
+    pad = 30
+    tabs_h = 44
+    img_w = sheet_w
+    img_h = sheet_h + pad * 2 + tabs_h + 10
 
-    scale = 1.0
-    if img_w > 1400:
-        scale = 1400 / img_w
-    img = Image.new("RGB", (int(img_w * scale) + 40, int(img_h * scale) + 40), "#f4f6f5")
-    draw = ImageDraw.Draw(img)
+    # ---- canvas with a soft warm gradient -----------------------------
+    img = Image.new("RGB", (px(img_w), px(img_h)), CANVAS_A)
+    d = ImageDraw.Draw(img)
+    for yy in range(px(img_h)):
+        t = yy / max(1, px(img_h))
+        c = tuple(round(CANVAS_A[i] + (CANVAS_B[i] - CANVAS_A[i]) * t) for i in range(3))
+        d.line([(0, yy), (px(img_w), yy)], fill=c)
 
-    def sc(v):
-        return int(v * scale)
+    # ---- floating sheet: drop shadow then rounded card -----------------
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.rounded_rectangle(
+        [px(pad + 8), px(pad + 18), px(pad + sum(col_widths) - 8), px(sheet_h + pad + 6)],
+        radius=px(16), fill=(28, 52, 36, 78))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(px(9)))
+    img.paste(shadow, (0, 0), shadow)
 
-    # Sheet background
-    draw.rounded_rectangle([sc(20), sc(20), sc(img_w - 20), sc(img_h - 20)], radius=14, fill="#f4f6f5")
-    draw.rounded_rectangle([sc(24), sc(24), sc(img_w - 24), sc(sheet_h + 24)], radius=10, fill="#ffffff")
+    d.rounded_rectangle([px(pad), px(pad), px(pad + sum(col_widths)), px(sheet_h + pad)],
+                        radius=px(18), fill=WHITE)
+    # hairline border
+    d.rounded_rectangle([px(pad), px(pad), px(pad + sum(col_widths)), px(sheet_h + pad)],
+                        radius=px(18), outline=(216, 210, 190), width=px(1))
 
-    # Title bar
-    draw.rounded_rectangle([sc(24), sc(24), sc(sheet_w + 24), sc(64)], radius=10, fill="#163A2A")
-    draw.ellipse([sc(40), sc(44), sc(56), sc(60)], fill="#ff6b65")
-    draw.ellipse([sc(62), sc(44), sc(78), sc(60)], fill="#ffc24d")
-    draw.ellipse([sc(84), sc(44), sc(100), sc(60)], fill="#44c78a")
-    title = f"Microsoft Excel  •  {product['title']}"
-    tw = draw.textlength(title, font=f_title)
-    draw.text((sc((sheet_w + 24 - tw) / 2 + 24), sc(38)), title, font=f_title, fill="#718078")
+    # ---- title bar: emerald gradient + gold hairline ------------------
+    bar_x0, bar_y0 = px(pad), px(pad)
+    bar_x1, bar_y1 = px(pad + sum(col_widths)), px(pad + 62)
+    grad = Image.new("RGB", (max(1, bar_x1 - bar_x0), max(1, bar_y1 - bar_y0)), DEEP)
+    gd = ImageDraw.Draw(grad)
+    for xx in range(bar_x1 - bar_x0):
+        t = xx / max(1, bar_x1 - bar_x0)
+        c = tuple(round(DEEP[i] + (EMERALD[i] - DEEP[i]) * t * 0.85) for i in range(3))
+        gd.line([(xx, 0), (xx, bar_y1 - bar_y0)], fill=c)
+    mask = Image.new("L", grad.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, grad.size[0] - 1, grad.size[1] - 1],
+                                           radius=px(18), fill=255)
+    # square off the bottom corners so it meets the sheet edge
+    ImageDraw.Draw(mask).rectangle([0, grad.size[1] - px(20), grad.size[0], grad.size[1]], fill=255)
+    img.paste(grad, (bar_x0, bar_y0), mask)
 
-    # Header row
-    headers = []
-    for c in range(1, n_cols + 1):
-        cell = ws.cell(4, c)
-        headers.append(str(cell.value or ""))
+    # window dots
+    for i, col in enumerate([(255, 107, 101), (255, 194, 77), (68, 199, 138)]):
+        cx = bar_x0 + px(26 + i * 22)
+        cy = bar_y0 + px(31)
+        d.ellipse([cx - px(6), cy - px(6), cx + px(6), cy + px(6)], fill=col)
+
+    # gold hairline under the bar
+    d.rectangle([bar_x0, bar_y1 - px(2), bar_x1, bar_y1], fill=GOLD_L)
+
+    # title, centred on the bar
+    f_title = load_font(17)
+    title = f"Microsoft Excel   ·   {product['title']}"
+    tw = d.textlength(title, font=f_title)
+    max_tw = (bar_x1 - bar_x0) - px(150)
+    while tw > max_tw and len(title) > 8:
+        title = title[:-2]
+        tw = d.textlength(title + "…", font=f_title)
+    if not title.endswith("…") and d.textlength(title + "…", font=f_title) > max_tw:
+        title += "…"
+    d.text(((bar_x0 + bar_x1 - tw) / 2, bar_y0 + px(20)), title, font=f_title,
+           fill=(233, 247, 224))
+
+    # ---- header row: emerald gradient cell by cell -------------------
+    headers = [str(ws.cell(4, c).value or "") for c in range(1, n_cols + 1)]
+    f_head = load_font(13)
     x = margin
     for cw, text in zip(col_widths, headers):
-        draw.rectangle([sc(x), sc(top), sc(x + cw), sc(top + header_h)], fill="#26734D")
+        hx0, hy0 = px(x), px(top)
+        hx1, hy1 = px(x + cw), px(top + header_h)
+        grad = Image.new("RGB", (max(1, hx1 - hx0), max(1, hy1 - hy0)), EMERALD)
+        gd = ImageDraw.Draw(grad)
+        for yy in range(hy1 - hy0):
+            t = yy / max(1, hy1 - hy0)
+            c = tuple(round(EMERALD[i] + ((16, 74, 46)[i] - EMERALD[i]) * t) for i in range(3))
+            gd.line([(0, yy), (hx1 - hx0, yy)], fill=c)
+        img.paste(grad, (hx0, hy0))
         if text:
-            tw = draw.textlength(text, font=f_head)
-            draw.text((sc(x + (cw - tw) / 2), sc(top + 12)), text, font=f_head, fill="#ffffff")
+            t = text
+            while d.textlength(t, font=f_head) > (hx1 - hx0) - px(18) and len(t) > 3:
+                t = t[:-1]
+            if t != text:
+                t += "…"
+            tw = d.textlength(t, font=f_head)
+            d.text((hx0 + ((hx1 - hx0) - tw) / 2, hy0 + (hy1 - hy0 - px(18)) / 2),
+                   t, font=f_head, fill=WHITE)
         x += cw
 
-    # Data rows
+    # ---- data rows: zebra tint + vivid source fills -------------------
+    f_cell = load_font(12, bold=False)
+    f_bold = load_font(12, bold=True)
     y = top + header_h
     for ri, rh in enumerate(row_heights):
-        row_idx = 4 + ri
+        row_idx = data_start + ri
         x = margin
         for ci, cw in enumerate(col_widths, 1):
             cell = ws.cell(row_idx, ci)
             value = cell.value
-            fill_color = "#ffffff"
+            fill_color = MINT if ri % 2 else WHITE
+            bold = False
             try:
                 fc = cell.fill
                 if fc and fc.fill_type == "solid" and fc.fgColor and fc.fgColor.rgb:
                     rgb = fc.fgColor.rgb
-                    if isinstance(rgb, str) and len(rgb) >= 6:
+                    if isinstance(rgb, str) and len(rgb) >= 6 and rgb[-6:] not in ("FFFFFF", "000000"):
                         fill_color = "#" + rgb[-6:]
             except Exception:
                 pass
-            draw.rectangle([sc(x), sc(y), sc(x + cw), sc(y + rh)], fill=fill_color, outline="#e1e6e3")
+            try:
+                bold = bool(cell.font and cell.font.bold)
+            except Exception:
+                pass
+
+            cx0, cy0 = px(x), px(y)
+            cx1, cy1 = px(x + cw), px(y + rh)
+            d.rectangle([cx0, cy0, cx1, cy1], fill=fill_color)
+            d.line([(cx0, cy1), (cx1, cy1)], fill=GRID, width=px(1))
+            d.line([(cx1, cy0), (cx1, cy1)], fill=GRID, width=px(1))
+
             if value is not None and not (isinstance(value, str) and value.startswith("=")):
                 text = str(value)
-                font = f_cell
-                tw = draw.textlength(text, font=font)
-                if tw > sc(cw) - 16:
-                    while text and draw.textlength(text + "…", font=font) > sc(cw) - 16:
+                if isinstance(value, float):
+                    text = f"{value:,.2f}".replace(",", " ").replace(".", ",")
+                elif isinstance(value, int):
+                    text = f"{value:,}".replace(",", " ")
+                font = f_bold if bold else f_cell
+                avail = (cx1 - cx0) - px(18)
+                if d.textlength(text, font=font) > avail:
+                    while text and d.textlength(text + "…", font=font) > avail:
                         text = text[:-1]
                     text += "…"
-                draw.text((sc(x + 8), sc(y + (rh - 16) / 2)), text, font=font, fill="#26352e")
+                d.text((cx0 + px(9), cy0 + (cy1 - cy0 - px(17)) / 2), text,
+                       font=font, fill=INK)
             x += cw
         y += rh
 
-    # Sheet tabs
-    tab_y = sheet_h + 20
+    # ---- sheet tabs ---------------------------------------------------
+    tab_y = sheet_h + pad + 2
     cursor = margin
-    for name in wb.sheetnames[:12]:
-        tw = max(78, min(148, len(name) * 9 + 26))
+    f_tab = load_font(12, bold=True)
+    for name in wb.sheetnames[:9]:
+        tw = max(96, min(180, len(name) * 10 + 34))
         active = name == product["sheet"]
-        draw.rounded_rectangle([sc(cursor), sc(tab_y), sc(cursor + tw), sc(tab_y + 28)], radius=6,
-                               fill="#e9f4ed" if active else "#f5f7f6",
-                               outline="#85b99a" if active else "#e1e6e3")
-        twn = draw.textlength(name[:16], font=f_cell)
-        draw.text((sc(cursor + (tw - twn) / 2), sc(tab_y + 9)), name[:16],
-                  font=f_cell, fill="#17633c" if active else "#77827c")
-        cursor += tw + 6
-        if cursor > sheet_w - 80:
+        tx0, ty0 = px(cursor), px(tab_y)
+        tx1, ty1 = px(cursor + tw), px(tab_y + 34)
+        if active:
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9), fill=EMERALD)
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9),
+                                outline=GOLD, width=px(1))
+            col = WHITE
+        else:
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9), fill=(252, 250, 243))
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9),
+                                outline=(222, 214, 194), width=px(1))
+            col = (108, 106, 90)
+        t = name[:18]
+        while d.textlength(t, font=f_tab) > (tx1 - tx0) - px(16) and len(t) > 3:
+            t = t[:-1]
+        twn = d.textlength(t, font=f_tab)
+        d.text((tx0 + ((tx1 - tx0) - twn) / 2, ty0 + ((ty1 - ty0) - px(17)) / 2),
+               t, font=f_tab, fill=col)
+        cursor += tw + 9
+        if cursor > sheet_w - 90:
             break
 
-    img.save(PUBLIC / product["preview"], "PNG")
+    # ---- downsample for crisp anti-aliased output ---------------------
+    out = img.resize((img_w, img_h), Image.LANCZOS)
+    out.save(PUBLIC / product["preview"], "PNG", optimize=True)
 
 
 SKIP_PREVIEWS = "--skip-previews" in sys.argv
@@ -508,7 +631,7 @@ for i, p in enumerate(PRODUCTS, 1):
 html = '''<!doctype html>
 <html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#08281a"><meta name="description" content="Planilhas Excel Premium para negócios, finanças, construção e formação profissional em Angola. Veja imagens originais, preços em Kz e baixe directamente."><title>Planilhas Excel Premium — Angola</title>
 <style>
-:root{color-scheme:light;--ink:#12241b;--ink-soft:#3f5348;--muted:#58665c;--line:#e8e0cc;--line-strong:#d8ceb4;--gold:#c9a227;--gold-soft:#e6cf8b;--green:#14532f;--green-deep:#0b3320;--green-mid:#1c6b41;--lime:#c8ee79;--lime-bright:#dcf9a0;--paper:#f7f3e8;--surface:#fffdf7;--surface-2:#f2ecdc;--surface-3:#ece4cf;--shadow:34 52 40}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{position:relative;overflow:hidden;background:radial-gradient(ellipse at 82% -10%,#20714a 0,transparent 46%),radial-gradient(ellipse at 8% 120%,#1a5c3c 0,transparent 42%),linear-gradient(155deg,#0c3521 0%,#08281a 55%,#061d13 100%);color:#fdfbf4;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:var(--lime-bright);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:var(--lime-bright);box-shadow:0 0 16px var(--lime-bright),0 0 34px rgb(200 238 121/.5)}.hero::after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(230 207 139/.55) 22%,rgb(230 207 139/.75) 50%,rgb(230 207 139/.55) 78%,transparent);pointer-events:none}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#c8d6c9;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:11px 16px;border-radius:9px;background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.5) inset,0 6px 16px -6px rgb(0 0 0/.5);font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{filter:brightness(1.06);transform:translateY(-1px)}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#bfd0c2;font-size:13px}.hero-foot b{color:#fdfbf4}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 1px 2px rgb(var(--shadow)/.04),0 10px 30px -8px rgb(var(--shadow)/.14);transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}.card::before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,transparent,rgb(201 162 39/.5),transparent);opacity:0;transition:opacity .25s;z-index:2}.card:hover::before{opacity:1}.card:hover{transform:translateY(-5px);border-color:var(--line-strong);box-shadow:0 2px 4px rgb(var(--shadow)/.05),0 26px 48px -14px rgb(var(--shadow)/.28)}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(160deg,var(--surface-2),var(--surface-3));padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.preview .fallback{display:none}.preview.noimg .fallback{display:block;position:absolute;inset:0;align-content:center;text-align:center;padding:18px;color:#53645a;font-size:12px;font-weight:650;line-height:1.5;background:var(--surface-2);z-index:1}.preview.noimg .zoom{display:none}.zoom{position:absolute;bottom:12px;right:12px;background:rgb(255 253 247/.92);color:#4f4736;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:linear-gradient(180deg,#f4f8ec,#e9f2dc);border:1px solid #dcd9c0;color:#1d5c37;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#8f8362;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green-mid)}.card p{min-height:46px;color:var(--muted);font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em;color:var(--green-deep)}.buy-actions{display:flex;gap:8px}.button{background:linear-gradient(180deg,var(--green-mid),var(--green-deep));color:#fdfbf4;text-decoration:none;font-weight:750;font-size:12px;padding:10px 14px;border-radius:9px;border:1px solid #0e4526;box-shadow:0 1px 0 rgb(255 255 255/.14) inset,0 4px 10px -3px rgb(var(--shadow)/.4);transition:filter .18s,transform .18s}.button:hover{filter:brightness(1.14);transform:translateY(-1px)}.button span{margin-left:6px;font-size:15px}.button.wa-mini{background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;padding:8px 12px;font-size:11px;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.45) inset,0 4px 10px -4px rgb(var(--shadow)/.35)}.button.wa-mini:hover{filter:brightness(1.05);transform:translateY(-1px)}.note{margin-top:27px;padding:16px 18px;border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;line-height:1.6;background:var(--surface)}.note strong{color:var(--green)}footer{background:var(--surface);border-top:1px solid var(--line);padding:22px 24px;color:#706a5a;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
+:root{color-scheme:light;--ink:#12241b;--ink-soft:#3f5348;--muted:#58665c;--line:#e8e0cc;--line-strong:#d8ceb4;--gold:#c9a227;--gold-soft:#e6cf8b;--green:#14532f;--green-deep:#0b3320;--green-mid:#1c6b41;--lime:#c8ee79;--lime-bright:#dcf9a0;--paper:#f7f3e8;--surface:#fffdf7;--surface-2:#f2ecdc;--surface-3:#ece4cf;--shadow:34 52 40}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{position:relative;overflow:hidden;background:radial-gradient(ellipse 60% 120% at 88% -25%,#2fa06a 0,transparent 58%),radial-gradient(ellipse 55% 110% at 6% 130%,#25895b 0,transparent 55%),radial-gradient(ellipse 90% 80% at 50% 120%,#0f5a38 0,transparent 60%),linear-gradient(160deg,#0e4529 0%,#0a3220 48%,#072619 100%);color:#fdfbf4;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:var(--lime-bright);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:var(--lime-bright);box-shadow:0 0 16px var(--lime-bright),0 0 34px rgb(200 238 121/.5)}.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 42% 70% at 78% 6%,rgb(220 249 160/.16),transparent 70%);pointer-events:none}.hero::after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(230 207 139/.55) 22%,rgb(230 207 139/.75) 50%,rgb(230 207 139/.55) 78%,transparent);pointer-events:none}.hero h1{text-shadow:0 2px 30px rgb(220 249 160/.18);max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#c8d6c9;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:11px 16px;border-radius:9px;background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.5) inset,0 6px 16px -6px rgb(0 0 0/.5);font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{filter:brightness(1.06);transform:translateY(-1px)}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#bfd0c2;font-size:13px}.hero-foot b{color:#fdfbf4}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 3px 6px -2px rgb(var(--shadow)/.08),0 12px 22px -8px rgb(var(--shadow)/.16),0 30px 56px -22px rgb(var(--shadow)/.30);transition:transform .3s cubic-bezier(.2,.8,.3,1),box-shadow .3s ease,border-color .3s ease}.card::before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(255 255 255/.9) 18%,rgb(255 255 255/.95) 50%,rgb(255 255 255/.9) 82%,transparent);z-index:3}.card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,rgb(201 162 39/.75) 25%,rgb(230 207 139/.95) 50%,rgb(201 162 39/.75) 75%,transparent);opacity:0;transition:opacity .3s;z-index:3}.card:hover::after{opacity:1}.card:hover{transform:translateY(-10px) scale(1.012);border-color:var(--gold-soft);box-shadow:0 2px 3px rgb(var(--shadow)/.06),0 6px 12px -3px rgb(var(--shadow)/.10),0 22px 38px -12px rgb(var(--shadow)/.26),0 52px 84px -30px rgb(var(--shadow)/.42)}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(ellipse at 50% 0%,#fbf7ea 0,var(--surface-2) 55%,var(--surface-3) 100%);box-shadow:inset 0 -18px 26px -22px rgb(34 52 40/.35),inset 0 1px 0 rgb(255 255 255/.7);padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgb(20 40 28/.10)) drop-shadow(0 12px 22px rgb(20 40 28/.16));transition:filter .3s,transform .3s}.card:hover .preview img{filter:drop-shadow(0 3px 6px rgb(20 40 28/.12)) drop-shadow(0 18px 32px rgb(20 40 28/.22));transform:scale(1.025)}.preview .fallback{display:none}.preview.noimg .fallback{display:block;position:absolute;inset:0;align-content:center;text-align:center;padding:18px;color:#53645a;font-size:12px;font-weight:650;line-height:1.5;background:var(--surface-2);z-index:1}.preview.noimg .zoom{display:none}.zoom{position:absolute;bottom:12px;right:12px;background:rgb(255 253 247/.92);color:#4f4736;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:linear-gradient(180deg,#f4f8ec,#e9f2dc);border:1px solid #dcd9c0;color:#1d5c37;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#8f8362;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green-mid)}.card p{min-height:46px;color:var(--muted);font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em;color:var(--green-deep)}.buy-actions{display:flex;gap:8px}.button{background:linear-gradient(180deg,var(--green-mid),var(--green-deep));color:#fdfbf4;text-decoration:none;font-weight:750;font-size:12px;padding:10px 14px;border-radius:9px;border:1px solid #0e4526;box-shadow:0 1px 0 rgb(255 255 255/.14) inset,0 4px 10px -3px rgb(var(--shadow)/.4);transition:filter .18s,transform .18s}.button:hover{filter:brightness(1.14);transform:translateY(-1px)}.button span{margin-left:6px;font-size:15px}.button.wa-mini{background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;padding:8px 12px;font-size:11px;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.45) inset,0 4px 10px -4px rgb(var(--shadow)/.35)}.button.wa-mini:hover{filter:brightness(1.05);transform:translateY(-1px)}.note{margin-top:27px;padding:16px 18px;border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;line-height:1.6;background:var(--surface)}.note strong{color:var(--green)}footer{background:var(--surface);border-top:1px solid var(--line);padding:22px 24px;color:#706a5a;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
 </style></head><body>
 <header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e peça a sua planilha directamente no WhatsApp.</p><a class="download-all" href="https://wa.me/244942739225?text=Ol%C3%A1%21%20Tenho%20interesse%20em%20comprar%20planilhas%20Excel%20Premium%20para%20Angola.">↗ Pedir no WhatsApp</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b> entregues pelo WhatsApp</span></div></header>
 <main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e pedir pelo WhatsApp.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
@@ -520,7 +643,7 @@ PROD_STYLES = (
     ":root{color-scheme:light;--ink:#12241b;--ink-soft:#3f5348;--muted:#58665c;--line:#e8e0cc;--line-strong:#d8ceb4;--gold:#c9a227;--gold-soft:#e6cf8b;--green:#14532f;--green-deep:#0b3320;--green-mid:#1c6b41;--lime:#c8ee79;--lime-bright:#dcf9a0;--paper:#f7f3e8;--surface:#fffdf7;--surface-2:#f2ecdc;--surface-3:#ece4cf;--shadow:34 52 40}"
     "*{box-sizing:border-box}"
     "body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
-    ".hero{position:relative;overflow:hidden;background:radial-gradient(ellipse at 82% -10%,#20714a 0,transparent 46%),radial-gradient(ellipse at 8% 120%,#1a5c3c 0,transparent 42%),linear-gradient(155deg,#0c3521 0%,#08281a 55%,#061d13 100%);color:#fdfbf4;padding:44px max(24px,calc((100% - 1160px)/2)) 46px}"
+    ".hero{position:relative;overflow:hidden;background:radial-gradient(ellipse 60% 120% at 88% -25%,#2fa06a 0,transparent 58%),radial-gradient(ellipse 55% 110% at 6% 130%,#25895b 0,transparent 55%),radial-gradient(ellipse 90% 80% at 50% 120%,#0f5a38 0,transparent 60%),linear-gradient(160deg,#0e4529 0%,#0a3220 48%,#072619 100%);color:#fdfbf4;padding:44px max(24px,calc((100% - 1160px)/2)) 46px}"
     ".topline{display:flex;align-items:center;gap:10px;color:var(--lime-bright);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}"
     ".dot{height:8px;width:8px;border-radius:50%;background:var(--lime-bright);box-shadow:0 0 16px var(--lime-bright),0 0 34px rgb(200 238 121/.5)}.hero::after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(230 207 139/.55) 22%,rgb(230 207 139/.75) 50%,rgb(230 207 139/.55) 78%,transparent);pointer-events:none}"
     ".crumb{display:inline-flex;align-items:center;margin:16px 0 0;color:#bfd0c2;font-size:12px;font-weight:700;text-decoration:none;transition:color .2s}"
@@ -535,7 +658,7 @@ PROD_STYLES = (
     ".hero-foot{display:flex;gap:18px;align-items:center;margin-top:26px;color:#bfd0c2;font-size:13px;flex-wrap:wrap}"
     ".hero-foot b{color:#fdfbf4}"
     ".wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}"
-    ".preview-block{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:0 1px 2px rgb(var(--shadow)/.04),0 12px 34px -10px rgb(var(--shadow)/.16);margin-bottom:36px}"
+    ".preview-block{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:30px;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 4px 8px -2px rgb(var(--shadow)/.09),0 16px 30px -10px rgb(var(--shadow)/.18),0 40px 70px -28px rgb(var(--shadow)/.34);margin-bottom:40px}"
     ".preview-block img{display:block;width:100%;max-height:540px;object-fit:contain;border-radius:12px;background:linear-gradient(160deg,var(--surface-2),var(--surface-3))}"
     ".caption{margin:14px 0 0;color:var(--muted);font-size:12px;text-align:center}"
     ".steps h2{font-size:24px;letter-spacing:-.035em;margin:0 0 16px}"
@@ -547,8 +670,8 @@ PROD_STYLES = (
     ".related{margin-top:44px}"
     ".related h2{font-size:22px;letter-spacing:-.035em;margin:0 0 16px}"
     ".mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
-    ".mini{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgb(var(--shadow)/.04),0 6px 18px -8px rgb(var(--shadow)/.18);text-decoration:none;color:inherit;display:flex;transition:transform .2s,box-shadow .2s}"
-    ".mini:hover{transform:translateY(-4px);border-color:var(--line-strong);box-shadow:0 2px 4px rgb(var(--shadow)/.05),0 18px 34px -12px rgb(var(--shadow)/.25)}"
+    ".mini{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 3px 6px -2px rgb(var(--shadow)/.08),0 10px 20px -8px rgb(var(--shadow)/.16),0 22px 40px -18px rgb(var(--shadow)/.26);text-decoration:none;color:inherit;display:flex;transition:transform .2s,box-shadow .2s}"
+    ".mini:hover{transform:translateY(-6px);border-color:var(--gold-soft);box-shadow:0 2px 3px rgb(var(--shadow)/.06),0 8px 14px -4px rgb(var(--shadow)/.12),0 22px 38px -14px rgb(var(--shadow)/.26),0 44px 68px -28px rgb(var(--shadow)/.38)}"
     ".mini .mi{width:104px;flex:none;background:linear-gradient(160deg,var(--surface-2),var(--surface-3));display:flex;align-items:center;justify-content:center;height:118px}"
     ".mini .mi img{width:100%;height:100%;object-fit:contain}"
     ".mini .mb{padding:12px 14px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0}"
