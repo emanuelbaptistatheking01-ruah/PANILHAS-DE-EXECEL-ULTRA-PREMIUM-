@@ -148,6 +148,33 @@ def preview_dimensions(preview_rel):
         return (900, 420)
 
 
+def thumb_name(preview_rel):
+    return preview_rel.replace("previews/", "previews/thumbs/").replace(".png", ".webp")
+
+
+def make_thumb(preview_rel):
+    """Build a light WebP thumbnail for catalog cards.
+
+    Cards render the preview at roughly 340px wide, so shipping the full
+    PNG there wasted bandwidth and left cards blank for seconds on slow
+    mobile connections. The product page keeps the full-resolution PNG.
+    """
+    from PIL import Image
+
+    src = ROOT / "public" / preview_rel
+    dst = ROOT / "public" / thumb_name(preview_rel)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() and dst.stat().st_mtime >= src.stat().st_mtime:
+        return thumb_name(preview_rel)
+    with Image.open(src) as im:
+        im = im.convert("RGB")
+        w, h = im.size
+        if w > 720:
+            im = im.resize((720, max(1, round(h * 720 / w))), Image.LANCZOS)
+        im.save(dst, "WEBP", quality=82, method=6)
+    return thumb_name(preview_rel)
+
+
 def preview_src(preview_rel, prefix=""):
     """Return the preview URL with a content hash query string.
 
@@ -469,9 +496,10 @@ for i, p in enumerate(PRODUCTS, 1):
     page = escape(f"produtos/{i}.html", quote=True)
     price = format(p["price"], ",").replace(",", ".")
     wa = wa_link(i, p, price)
-    pw, ph = preview_dimensions(p["preview"])
+    thumb_rel = make_thumb(p["preview"])
+    pw, ph = preview_dimensions(thumb_rel)
     cards.append(f'''<article class="card">
-      <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(preview_src(p['preview']))}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="{'high' if i <= 3 else 'auto'}" onerror="this.closest('.preview').classList.add('noimg');this.remove()"><span class="zoom">Pré-visualização da folha original</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
+      <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(preview_src(thumb_rel))}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="{'high' if i <= 3 else 'auto'}" onerror="this.closest('.preview').classList.add('noimg');this.remove()"><span class="zoom">Pré-visualização da folha original</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
       <div class="card-body"><div class="meta"><span class="tag">{escape(p['tag'])}</span><span class="number">#{i:02d}</span></div>
       <h2><a href="{page}">{escape(p['title'])}</a></h2><p>{escape(p['description'])}</p>
       <div class="buy"><strong>{price} Kz</strong><div class="buy-actions"><a class="button wa-mini" href="{wa}">WhatsApp <span aria-hidden="true">↗</span></a><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div></div>
@@ -545,9 +573,10 @@ def build_product_pages():
             if j == i or len(rel) == 4:
                 continue
             q_price = format(q["price"], ",").replace(",", ".")
-            qw, qh = preview_dimensions(q["preview"])
+            qt = make_thumb(q["preview"])
+            qw, qh = preview_dimensions(qt)
             rel.append(
-                f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape(preview_src(q['preview'], '../'))}" alt="Pré-visualização da planilha {escape(q['title'])}" width="{qw}" height="{qh}" decoding="async"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
+                f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape(preview_src(qt, '../'))}" alt="Pré-visualização da planilha {escape(q['title'])}" width="{qw}" height="{qh}" decoding="async"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
             )
         page_html = f'''<!doctype html>
 <html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original da planilha {escape(p['title'])} em Excel por {price} Kz. Peça pelo WhatsApp."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
