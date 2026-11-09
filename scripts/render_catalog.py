@@ -614,83 +614,47 @@ if not SKIP_PREVIEWS:
             continue
         make_preview(product)
 
+from catalog_home import build_home
+from catalog_product import build_product
+
+CARD_TPL = """<article class="card">
+      <a class="preview" href="produtos/__I__.html" aria-label="Ver detalhes da planilha __TITLE__"><img src="__SRC__" alt="Pré-visualização real da folha __SHEET__ da planilha __TITLE__" width="__W__" height="__H__" __LOAD__ decoding="async"><span class="zoom">Folha real</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
+      <div class="card-body"><div class="meta"><span class="tag">__TAG__</span><span class="number">#__I2__</span></div>
+      <h3><a href="produtos/__I__.html">__TITLE__</a></h3><p>__DESC__</p>
+      <div class="buy"><strong>__PRICE__ Kz</strong><div class="buy-actions"><a class="btn-sm btn-out" href="produtos/__I__.html">Detalhes</a><a class="btn-sm btn-wa" href="__WA__">WhatsApp <span aria-hidden="true">↗</span></a></div></div></div></article>"""
+
 cards = []
 for i, p in enumerate(PRODUCTS, 1):
-    page = escape(f"produtos/{i}.html", quote=True)
     price = format(p["price"], ",").replace(",", ".")
     wa = wa_link(i, p, price)
     thumb_rel = make_thumb(p["preview"])
     pw, ph = preview_dimensions(thumb_rel)
-    cards.append(f'''<article class="card">
-      <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(preview_src(thumb_rel))}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="{'high' if i <= 3 else 'auto'}" onerror="this.closest('.preview').classList.add('noimg');this.remove()"><span class="zoom">Pré-visualização da folha original</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
-      <div class="card-body"><div class="meta"><span class="tag">{escape(p['tag'])}</span><span class="number">#{i:02d}</span></div>
-      <h2><a href="{page}">{escape(p['title'])}</a></h2><p>{escape(p['description'])}</p>
-      <div class="buy"><strong>{price} Kz</strong><div class="buy-actions"><a class="button wa-mini" href="{wa}">WhatsApp <span aria-hidden="true">↗</span></a><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div></div>
-    </article>''')
+    cards.append(
+        CARD_TPL.replace("__WA__", escape(wa, quote=True))
+        .replace("__SRC__", escape(preview_src(thumb_rel), quote=True))
+        .replace("__DESC__", escape(p["description"]))
+        .replace("__SHEET__", escape(p["sheet"]))
+        .replace("__TITLE__", escape(p["title"]))
+        .replace("__TAG__", escape(p["tag"]))
+        .replace("__PRICE__", price)
+        .replace("__I2__", f"{i:02d}")
+        .replace("__I__", str(i))
+        .replace("__LOAD__", 'fetchpriority="high"' if i <= 3 else 'loading="lazy"')
+        .replace("__W__", str(pw))
+        .replace("__H__", str(ph))
+    )
 
-html = '''<!doctype html>
-<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#08281a"><meta name="description" content="Planilhas Excel Premium para negócios, finanças, construção e formação profissional em Angola. Veja imagens originais, preços em Kz e baixe directamente."><title>Planilhas Excel Premium — Angola</title>
-<style>
-:root{color-scheme:light;--ink:#12241b;--ink-soft:#3f5348;--muted:#58665c;--line:#e8e0cc;--line-strong:#d8ceb4;--gold:#c9a227;--gold-soft:#e6cf8b;--green:#14532f;--green-deep:#0b3320;--green-mid:#1c6b41;--lime:#c8ee79;--lime-bright:#dcf9a0;--paper:#f7f3e8;--surface:#fffdf7;--surface-2:#f2ecdc;--surface-3:#ece4cf;--shadow:34 52 40}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{position:relative;overflow:hidden;background:radial-gradient(ellipse 60% 120% at 88% -25%,#2fa06a 0,transparent 58%),radial-gradient(ellipse 55% 110% at 6% 130%,#25895b 0,transparent 55%),radial-gradient(ellipse 90% 80% at 50% 120%,#0f5a38 0,transparent 60%),linear-gradient(160deg,#0e4529 0%,#0a3220 48%,#072619 100%);color:#fdfbf4;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:var(--lime-bright);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:var(--lime-bright);box-shadow:0 0 16px var(--lime-bright),0 0 34px rgb(200 238 121/.5)}.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 42% 70% at 78% 6%,rgb(220 249 160/.16),transparent 70%);pointer-events:none}.hero::after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(230 207 139/.55) 22%,rgb(230 207 139/.75) 50%,rgb(230 207 139/.55) 78%,transparent);pointer-events:none}.hero h1{text-shadow:0 2px 30px rgb(220 249 160/.18);max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#c8d6c9;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:11px 16px;border-radius:9px;background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.5) inset,0 6px 16px -6px rgb(0 0 0/.5);font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{filter:brightness(1.06);transform:translateY(-1px)}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#bfd0c2;font-size:13px}.hero-foot b{color:#fdfbf4}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 3px 6px -2px rgb(var(--shadow)/.08),0 12px 22px -8px rgb(var(--shadow)/.16),0 30px 56px -22px rgb(var(--shadow)/.30);transition:transform .3s cubic-bezier(.2,.8,.3,1),box-shadow .3s ease,border-color .3s ease}.card::before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(255 255 255/.9) 18%,rgb(255 255 255/.95) 50%,rgb(255 255 255/.9) 82%,transparent);z-index:3}.card::after{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,transparent,rgb(201 162 39/.75) 25%,rgb(230 207 139/.95) 50%,rgb(201 162 39/.75) 75%,transparent);opacity:0;transition:opacity .3s;z-index:3}.card:hover::after{opacity:1}.card:hover{transform:translateY(-10px) scale(1.012);border-color:var(--gold-soft);box-shadow:0 2px 3px rgb(var(--shadow)/.06),0 6px 12px -3px rgb(var(--shadow)/.10),0 22px 38px -12px rgb(var(--shadow)/.26),0 52px 84px -30px rgb(var(--shadow)/.42)}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(ellipse at 50% 0%,#fbf7ea 0,var(--surface-2) 55%,var(--surface-3) 100%);box-shadow:inset 0 -18px 26px -22px rgb(34 52 40/.35),inset 0 1px 0 rgb(255 255 255/.7);padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgb(20 40 28/.10)) drop-shadow(0 12px 22px rgb(20 40 28/.16));transition:filter .3s,transform .3s}.card:hover .preview img{filter:drop-shadow(0 3px 6px rgb(20 40 28/.12)) drop-shadow(0 18px 32px rgb(20 40 28/.22));transform:scale(1.025)}.preview .fallback{display:none}.preview.noimg .fallback{display:block;position:absolute;inset:0;align-content:center;text-align:center;padding:18px;color:#53645a;font-size:12px;font-weight:650;line-height:1.5;background:var(--surface-2);z-index:1}.preview.noimg .zoom{display:none}.zoom{position:absolute;bottom:12px;right:12px;background:rgb(255 253 247/.92);color:#4f4736;border:1px solid var(--line-strong);border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:linear-gradient(180deg,#f4f8ec,#e9f2dc);border:1px solid #dcd9c0;color:#1d5c37;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#8f8362;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green-mid)}.card p{min-height:46px;color:var(--muted);font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em;color:var(--green-deep)}.buy-actions{display:flex;gap:8px}.button{background:linear-gradient(180deg,var(--green-mid),var(--green-deep));color:#fdfbf4;text-decoration:none;font-weight:750;font-size:12px;padding:10px 14px;border-radius:9px;border:1px solid #0e4526;box-shadow:0 1px 0 rgb(255 255 255/.14) inset,0 4px 10px -3px rgb(var(--shadow)/.4);transition:filter .18s,transform .18s}.button:hover{filter:brightness(1.14);transform:translateY(-1px)}.button span{margin-left:6px;font-size:15px}.button.wa-mini{background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;padding:8px 12px;font-size:11px;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.45) inset,0 4px 10px -4px rgb(var(--shadow)/.35)}.button.wa-mini:hover{filter:brightness(1.05);transform:translateY(-1px)}.note{margin-top:27px;padding:16px 18px;border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;line-height:1.6;background:var(--surface)}.note strong{color:var(--green)}footer{background:var(--surface);border-top:1px solid var(--line);padding:22px 24px;color:#706a5a;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
-</style></head><body>
-<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e peça a sua planilha directamente no WhatsApp.</p><a class="download-all" href="https://wa.me/244942739225?text=Ol%C3%A1%21%20Tenho%20interesse%20em%20comprar%20planilhas%20Excel%20Premium%20para%20Angola.">↗ Pedir no WhatsApp</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b> entregues pelo WhatsApp</span></div></header>
-<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e pedir pelo WhatsApp.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
-<div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. As planilhas não estão disponíveis para download: ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
-html = html.replace("10</b> planilhas disponíveis", f"{len(PRODUCTS)}</b> planilhas disponíveis")
-(PUBLIC / "index.html").write_text(html, encoding="utf-8")
-
-PROD_STYLES = (
-    ":root{color-scheme:light;--ink:#12241b;--ink-soft:#3f5348;--muted:#58665c;--line:#e8e0cc;--line-strong:#d8ceb4;--gold:#c9a227;--gold-soft:#e6cf8b;--green:#14532f;--green-deep:#0b3320;--green-mid:#1c6b41;--lime:#c8ee79;--lime-bright:#dcf9a0;--paper:#f7f3e8;--surface:#fffdf7;--surface-2:#f2ecdc;--surface-3:#ece4cf;--shadow:34 52 40}"
-    "*{box-sizing:border-box}"
-    "body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
-    ".hero{position:relative;overflow:hidden;background:radial-gradient(ellipse 60% 120% at 88% -25%,#2fa06a 0,transparent 58%),radial-gradient(ellipse 55% 110% at 6% 130%,#25895b 0,transparent 55%),radial-gradient(ellipse 90% 80% at 50% 120%,#0f5a38 0,transparent 60%),linear-gradient(160deg,#0e4529 0%,#0a3220 48%,#072619 100%);color:#fdfbf4;padding:44px max(24px,calc((100% - 1160px)/2)) 46px}"
-    ".topline{display:flex;align-items:center;gap:10px;color:var(--lime-bright);font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}"
-    ".dot{height:8px;width:8px;border-radius:50%;background:var(--lime-bright);box-shadow:0 0 16px var(--lime-bright),0 0 34px rgb(200 238 121/.5)}.hero::after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgb(230 207 139/.55) 22%,rgb(230 207 139/.75) 50%,rgb(230 207 139/.55) 78%,transparent);pointer-events:none}"
-    ".crumb{display:inline-flex;align-items:center;margin:16px 0 0;color:#bfd0c2;font-size:12px;font-weight:700;text-decoration:none;transition:color .2s}"
-    ".crumb:hover{color:#fdfbf4}"
-    ".hero h1{max-width:760px;font-size:clamp(30px,5vw,52px);line-height:1.05;letter-spacing:-.045em;margin:14px 0 12px}"
-    ".hero p{max-width:650px;color:#c8d6c9;line-height:1.7;font-size:16px;margin:0}"
-    ".cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}"
-    ".button{background:linear-gradient(180deg,var(--green-mid),var(--green-deep));color:#fdfbf4;text-decoration:none;font-weight:750;font-size:12px;padding:12px 16px;border-radius:10px;border:1px solid #0e4526;box-shadow:0 1px 0 rgb(255 255 255/.14) inset,0 5px 14px -4px rgb(var(--shadow)/.45);transition:filter .18s,transform .18s;display:inline-flex;align-items:center;gap:8px}"
-    ".button span{margin-left:4px;font-size:15px}"
-    ".button.wa{background:linear-gradient(180deg,var(--lime-bright),#b6e35d);color:#12351f;border:1px solid #a5d64f;box-shadow:0 1px 0 rgb(255 255 255/.5) inset,0 6px 16px -6px rgb(0 0 0/.5)}"
-    ".button.wa:hover{filter:brightness(1.06);transform:translateY(-1px)}"
-    ".hero-foot{display:flex;gap:18px;align-items:center;margin-top:26px;color:#bfd0c2;font-size:13px;flex-wrap:wrap}"
-    ".hero-foot b{color:#fdfbf4}"
-    ".wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}"
-    ".preview-block{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:30px;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 4px 8px -2px rgb(var(--shadow)/.09),0 16px 30px -10px rgb(var(--shadow)/.18),0 40px 70px -28px rgb(var(--shadow)/.34);margin-bottom:40px}"
-    ".preview-block img{display:block;width:100%;max-height:540px;object-fit:contain;border-radius:12px;background:linear-gradient(160deg,var(--surface-2),var(--surface-3))}"
-    ".caption{margin:14px 0 0;color:var(--muted);font-size:12px;text-align:center}"
-    ".steps h2{font-size:24px;letter-spacing:-.035em;margin:0 0 16px}"
-    ".steps ol{margin:0;padding-left:22px;color:var(--ink-soft);font-size:14px;line-height:2}"
-    ".steps li{margin-bottom:8px}"
-    ".steps li::marker{color:var(--green);font-weight:800}"
-    ".nota{margin:22px 0 0;padding:16px 18px;border:1px solid var(--line);border-radius:14px;color:var(--muted);font-size:12px;line-height:1.6;background:var(--surface)}"
-    ".nota strong{color:var(--green)}"
-    ".related{margin-top:44px}"
-    ".related h2{font-size:22px;letter-spacing:-.035em;margin:0 0 16px}"
-    ".mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
-    ".mini{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 1px 1px rgb(var(--shadow)/.05),0 3px 6px -2px rgb(var(--shadow)/.08),0 10px 20px -8px rgb(var(--shadow)/.16),0 22px 40px -18px rgb(var(--shadow)/.26);text-decoration:none;color:inherit;display:flex;transition:transform .2s,box-shadow .2s}"
-    ".mini:hover{transform:translateY(-6px);border-color:var(--gold-soft);box-shadow:0 2px 3px rgb(var(--shadow)/.06),0 8px 14px -4px rgb(var(--shadow)/.12),0 22px 38px -14px rgb(var(--shadow)/.26),0 44px 68px -28px rgb(var(--shadow)/.38)}"
-    ".mini .mi{width:104px;flex:none;background:linear-gradient(160deg,var(--surface-2),var(--surface-3));display:flex;align-items:center;justify-content:center;height:118px}"
-    ".mini .mi img{width:100%;height:100%;object-fit:contain}"
-    ".mini .mb{padding:12px 14px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0}"
-    ".mini .mb strong{font-size:14px;line-height:1.25}"
-    ".mini .mb span{font-size:12px;color:var(--muted)}"
-    ".mini .mb em{font-style:normal;font-size:11px;font-weight:700;color:var(--green)}"
-    "footer{background:var(--surface);border-top:1px solid var(--line);padding:22px 24px;color:#706a5a;text-align:center;font-size:11px}"
-    "@media(max-width:720px){.hero{padding-top:36px;padding-bottom:38px}.mini-grid{grid-template-columns:1fr}.steps ol{font-size:13px;line-height:1.9}}"
-)
+home = build_home(PRODUCTS)
+for k, card in enumerate(cards):
+    home = home.replace(f"__CARD__{k}__", card)
+(PUBLIC / "index.html").write_text(home, encoding="utf-8")
 
 def build_product_pages():
     (PUBLIC / "produtos").mkdir(parents=True, exist_ok=True)
     for i, p in enumerate(PRODUCTS, 1):
         steps = STEPS[i - 1]
-        steps_html = "\n".join(f"      <li>{escape(s)}</li>" for s in steps)
-        preview = escape(preview_src(p["preview"], "../"), quote=True)
-        pw, ph = preview_dimensions(p["preview"])
         price = format(p["price"], ",").replace(",", ".")
-        wa = wa_link(i, p, price)
+        wa = escape(wa_link(i, p, price), quote=True)
         rel = []
         for j, q in enumerate(PRODUCTS, 1):
             if j == i or len(rel) == 4:
@@ -699,31 +663,12 @@ def build_product_pages():
             qt = make_thumb(q["preview"])
             qw, qh = preview_dimensions(qt)
             rel.append(
-                f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape(preview_src(qt, '../'))}" alt="Pré-visualização da planilha {escape(q['title'])}" width="{qw}" height="{qh}" decoding="async"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
+                f'      <a class="mini" href="{j}.html"><div class="mi"><img src="../{escape(preview_src(qt))}" alt="Pré-visualização da planilha {escape(q["title"])}" width="{qw}" height="{qh}" loading="lazy" decoding="async"></div><div class="mb"><strong>{escape(q["title"])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'
             )
-        page_html = f'''<!doctype html>
-<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#08281a"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original da planilha {escape(p['title'])} em Excel por {price} Kz. Peça pelo WhatsApp."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
-<style>{PROD_STYLES}</style></head>
-<body>
-<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><a class="crumb" href="../index.html">← Ver todas as planilhas</a>
-<h1>{escape(p['title'])}</h1>
-<p>{escape(p['description'])}</p>
-<div class="cta-row"><a class="button wa" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a></div>
-<div class="hero-foot"><span><b>{price} Kz</b></span><span>·</span><span>{escape(p['tag'])}</span><span>·</span><span>Planilha #{i:02d}</span><span>·</span><span>Ficheiro <b>.xlsx</b> entregue pelo WhatsApp</span></div></header>
-<main class="wrap">
-<section class="preview-block"><img src="{preview}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="high"><p class="caption">Pré-visualização da folha original — aba “{escape(p['sheet'])}” da planilha {escape(p['title'])}.</p></section>
-<section class="steps"><h2>Como usar esta planilha</h2>
-<ol>
-{steps_html}
-</ol></section>
-<section class="nota"><strong>Como receber a planilha:</strong> ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização.</section>
-<section class="related"><h2>Outras planilhas</h2><div class="mini-grid">
-{chr(10).join(rel)}
-</div></section>
-</main>
-<footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer>
-</body></html>'''
+        pw, ph = preview_dimensions(p["preview"])
+        page_html = build_product(i, p, price, wa, steps, rel, pw, ph)
         (PUBLIC / "produtos" / f"{i}.html").write_text(page_html, encoding="utf-8")
+
 
 build_product_pages()
 print(f"Generated {len(PRODUCTS)} previews, public/index.html and {len(PRODUCTS)} product pages")
