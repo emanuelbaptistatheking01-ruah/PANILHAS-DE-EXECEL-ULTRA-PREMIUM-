@@ -358,126 +358,249 @@ def _make_preview_svg(product):
 
 
 def _make_preview_pil(product):
-    """Render a spreadsheet-style preview PNG using Pillow (no heavy deps)."""
-    from PIL import Image, ImageDraw, ImageFont
+    """Render a vivid, high-resolution spreadsheet preview (2x supersampled)."""
+    from PIL import Image, ImageDraw, ImageFont, ImageFilter
     from openpyxl import load_workbook
     from openpyxl.utils import get_column_letter
 
-    try:
-        f_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
-        f_head = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 11)
-        f_cell = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-    except OSError:
-        f_title = f_head = f_cell = ImageFont.load_default()
+    # Renders at 2x then downsamples: crisp text and smooth shadows.
+    SS = 2
+
+    def px(v):
+        return int(round(v * SS))
+
+    FONT_DIRS = ["/usr/share/fonts/truetype/dejavu/", "/usr/share/fonts/truetype/liberation/"]
+    def load_font(size, bold=True):
+        names = ["DejaVuSans-Bold.ttf"] if bold else ["DejaVuSans.ttf"]
+        if bold:
+            names.insert(0, "DejaVuSans-Bold.ttf")
+        for d in FONT_DIRS:
+            for n in names:
+                try:
+                    return ImageFont.truetype(d + n, px(size))
+                except OSError:
+                    continue
+        return ImageFont.load_default()
+
+    # ---- premium palette ----------------------------------------------
+    DEEP      = (9, 52, 32)        # header base
+    EMERALD   = (28, 107, 65)      # header highlight
+    MINT      = (233, 247, 224)    # soft cell tint
+    GOLD      = (201, 162, 39)
+    GOLD_L    = (230, 207, 139)
+    INK       = (24, 42, 32)
+    GRID      = (222, 231, 224)
+    WHITE     = (255, 255, 255)
+    CANVAS_A  = (245, 240, 226)
+    CANVAS_B  = (237, 230, 212)
 
     path = PUBLIC / product["file"]
-    wb = load_workbook(path, data_only=False)
+    wb = load_workbook(path, data_only=True)
     ws = wb[product["sheet"]]
 
-    n_cols = 12
+    # Trim to the columns/rows that actually carry data.
+    used_cols, used_rows = 0, 0
+    for row in ws.iter_rows(min_row=1, max_row=4 + 20, max_col=20):
+        for cell in row:
+            if cell.value is not None and str(cell.value).strip() != "":
+                used_cols = max(used_cols, cell.column)
+                used_rows = max(used_rows, cell.row)
+    n_cols = max(4, min(10, used_cols))
+    data_start = 5                      # row 4 is the column-header row
+    filled = 0
+    for r in range(data_start, data_start + 20):
+        # A row counts only if it carries real content beyond the row-number column.
+        if any(str(ws.cell(r, c).value or "").strip() for c in range(2, n_cols + 1)):
+            filled = r - data_start + 1
+        elif filled:
+            break
+    n_rows = max(3, min(9, filled or 3))
+
     col_widths = []
     for idx in range(1, n_cols + 1):
         dim = ws.column_dimensions.get(get_column_letter(idx))
         width = dim.width if dim is not None and dim.width else 12
-        col_widths.append(max(78, min(210, int(width * 7) + 12)))
-    n_rows = 9
+        col_widths.append(max(112, min(250, int(width * 8) + 16)))
     row_heights = []
-    for r in range(4, 4 + n_rows):
+    for r in range(data_start, data_start + n_rows):
         dim = ws.row_dimensions.get(r)
         height = dim.height if dim is not None and dim.height else 22
-        row_heights.append(max(26, min(56, int(height) + 8)))
+        row_heights.append(max(40, min(72, int(height) + 16)))
 
-    margin = 26
-    top = 64
-    header_h = 36
+    margin, top, header_h = 34, 86, 48
     sheet_w = margin * 2 + sum(col_widths)
     sheet_h = top + header_h + sum(row_heights)
-    tabs_h = 34
-    img_w = sheet_w + 40
-    img_h = sheet_h + tabs_h + 24
+    pad = 30
+    tabs_h = 44
+    img_w = sheet_w
+    img_h = sheet_h + pad * 2 + tabs_h + 10
 
-    scale = 1.0
-    if img_w > 1400:
-        scale = 1400 / img_w
-    img = Image.new("RGB", (int(img_w * scale) + 40, int(img_h * scale) + 40), "#f4f6f5")
-    draw = ImageDraw.Draw(img)
+    # ---- canvas with a soft warm gradient -----------------------------
+    img = Image.new("RGB", (px(img_w), px(img_h)), CANVAS_A)
+    d = ImageDraw.Draw(img)
+    for yy in range(px(img_h)):
+        t = yy / max(1, px(img_h))
+        c = tuple(round(CANVAS_A[i] + (CANVAS_B[i] - CANVAS_A[i]) * t) for i in range(3))
+        d.line([(0, yy), (px(img_w), yy)], fill=c)
 
-    def sc(v):
-        return int(v * scale)
+    # ---- floating sheet: drop shadow then rounded card -----------------
+    shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shadow)
+    sd.rounded_rectangle(
+        [px(pad + 8), px(pad + 18), px(pad + sum(col_widths) - 8), px(sheet_h + pad + 6)],
+        radius=px(16), fill=(28, 52, 36, 78))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(px(9)))
+    img.paste(shadow, (0, 0), shadow)
 
-    # Sheet background
-    draw.rounded_rectangle([sc(20), sc(20), sc(img_w - 20), sc(img_h - 20)], radius=14, fill="#f4f6f5")
-    draw.rounded_rectangle([sc(24), sc(24), sc(img_w - 24), sc(sheet_h + 24)], radius=10, fill="#ffffff")
+    d.rounded_rectangle([px(pad), px(pad), px(pad + sum(col_widths)), px(sheet_h + pad)],
+                        radius=px(18), fill=WHITE)
+    # hairline border
+    d.rounded_rectangle([px(pad), px(pad), px(pad + sum(col_widths)), px(sheet_h + pad)],
+                        radius=px(18), outline=(216, 210, 190), width=px(1))
 
-    # Title bar
-    draw.rounded_rectangle([sc(24), sc(24), sc(sheet_w + 24), sc(64)], radius=10, fill="#163A2A")
-    draw.ellipse([sc(40), sc(44), sc(56), sc(60)], fill="#ff6b65")
-    draw.ellipse([sc(62), sc(44), sc(78), sc(60)], fill="#ffc24d")
-    draw.ellipse([sc(84), sc(44), sc(100), sc(60)], fill="#44c78a")
-    title = f"Microsoft Excel  •  {product['title']}"
-    tw = draw.textlength(title, font=f_title)
-    draw.text((sc((sheet_w + 24 - tw) / 2 + 24), sc(38)), title, font=f_title, fill="#718078")
+    # ---- title bar: emerald gradient + gold hairline ------------------
+    bar_x0, bar_y0 = px(pad), px(pad)
+    bar_x1, bar_y1 = px(pad + sum(col_widths)), px(pad + 62)
+    grad = Image.new("RGB", (max(1, bar_x1 - bar_x0), max(1, bar_y1 - bar_y0)), DEEP)
+    gd = ImageDraw.Draw(grad)
+    for xx in range(bar_x1 - bar_x0):
+        t = xx / max(1, bar_x1 - bar_x0)
+        c = tuple(round(DEEP[i] + (EMERALD[i] - DEEP[i]) * t * 0.85) for i in range(3))
+        gd.line([(xx, 0), (xx, bar_y1 - bar_y0)], fill=c)
+    mask = Image.new("L", grad.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, grad.size[0] - 1, grad.size[1] - 1],
+                                           radius=px(18), fill=255)
+    # square off the bottom corners so it meets the sheet edge
+    ImageDraw.Draw(mask).rectangle([0, grad.size[1] - px(20), grad.size[0], grad.size[1]], fill=255)
+    img.paste(grad, (bar_x0, bar_y0), mask)
 
-    # Header row
-    headers = []
-    for c in range(1, n_cols + 1):
-        cell = ws.cell(4, c)
-        headers.append(str(cell.value or ""))
+    # window dots
+    for i, col in enumerate([(255, 107, 101), (255, 194, 77), (68, 199, 138)]):
+        cx = bar_x0 + px(26 + i * 22)
+        cy = bar_y0 + px(31)
+        d.ellipse([cx - px(6), cy - px(6), cx + px(6), cy + px(6)], fill=col)
+
+    # gold hairline under the bar
+    d.rectangle([bar_x0, bar_y1 - px(2), bar_x1, bar_y1], fill=GOLD_L)
+
+    # title, centred on the bar
+    f_title = load_font(17)
+    title = f"Microsoft Excel   ·   {product['title']}"
+    tw = d.textlength(title, font=f_title)
+    max_tw = (bar_x1 - bar_x0) - px(150)
+    while tw > max_tw and len(title) > 8:
+        title = title[:-2]
+        tw = d.textlength(title + "…", font=f_title)
+    if not title.endswith("…") and d.textlength(title + "…", font=f_title) > max_tw:
+        title += "…"
+    d.text(((bar_x0 + bar_x1 - tw) / 2, bar_y0 + px(20)), title, font=f_title,
+           fill=(233, 247, 224))
+
+    # ---- header row: emerald gradient cell by cell -------------------
+    headers = [str(ws.cell(4, c).value or "") for c in range(1, n_cols + 1)]
+    f_head = load_font(13)
     x = margin
     for cw, text in zip(col_widths, headers):
-        draw.rectangle([sc(x), sc(top), sc(x + cw), sc(top + header_h)], fill="#26734D")
+        hx0, hy0 = px(x), px(top)
+        hx1, hy1 = px(x + cw), px(top + header_h)
+        grad = Image.new("RGB", (max(1, hx1 - hx0), max(1, hy1 - hy0)), EMERALD)
+        gd = ImageDraw.Draw(grad)
+        for yy in range(hy1 - hy0):
+            t = yy / max(1, hy1 - hy0)
+            c = tuple(round(EMERALD[i] + ((16, 74, 46)[i] - EMERALD[i]) * t) for i in range(3))
+            gd.line([(0, yy), (hx1 - hx0, yy)], fill=c)
+        img.paste(grad, (hx0, hy0))
         if text:
-            tw = draw.textlength(text, font=f_head)
-            draw.text((sc(x + (cw - tw) / 2), sc(top + 12)), text, font=f_head, fill="#ffffff")
+            t = text
+            while d.textlength(t, font=f_head) > (hx1 - hx0) - px(18) and len(t) > 3:
+                t = t[:-1]
+            if t != text:
+                t += "…"
+            tw = d.textlength(t, font=f_head)
+            d.text((hx0 + ((hx1 - hx0) - tw) / 2, hy0 + (hy1 - hy0 - px(18)) / 2),
+                   t, font=f_head, fill=WHITE)
         x += cw
 
-    # Data rows
+    # ---- data rows: zebra tint + vivid source fills -------------------
+    f_cell = load_font(12, bold=False)
+    f_bold = load_font(12, bold=True)
     y = top + header_h
     for ri, rh in enumerate(row_heights):
-        row_idx = 4 + ri
+        row_idx = data_start + ri
         x = margin
         for ci, cw in enumerate(col_widths, 1):
             cell = ws.cell(row_idx, ci)
             value = cell.value
-            fill_color = "#ffffff"
+            fill_color = MINT if ri % 2 else WHITE
+            bold = False
             try:
                 fc = cell.fill
                 if fc and fc.fill_type == "solid" and fc.fgColor and fc.fgColor.rgb:
                     rgb = fc.fgColor.rgb
-                    if isinstance(rgb, str) and len(rgb) >= 6:
+                    if isinstance(rgb, str) and len(rgb) >= 6 and rgb[-6:] not in ("FFFFFF", "000000"):
                         fill_color = "#" + rgb[-6:]
             except Exception:
                 pass
-            draw.rectangle([sc(x), sc(y), sc(x + cw), sc(y + rh)], fill=fill_color, outline="#e1e6e3")
+            try:
+                bold = bool(cell.font and cell.font.bold)
+            except Exception:
+                pass
+
+            cx0, cy0 = px(x), px(y)
+            cx1, cy1 = px(x + cw), px(y + rh)
+            d.rectangle([cx0, cy0, cx1, cy1], fill=fill_color)
+            d.line([(cx0, cy1), (cx1, cy1)], fill=GRID, width=px(1))
+            d.line([(cx1, cy0), (cx1, cy1)], fill=GRID, width=px(1))
+
             if value is not None and not (isinstance(value, str) and value.startswith("=")):
                 text = str(value)
-                font = f_cell
-                tw = draw.textlength(text, font=font)
-                if tw > sc(cw) - 16:
-                    while text and draw.textlength(text + "…", font=font) > sc(cw) - 16:
+                if isinstance(value, float):
+                    text = f"{value:,.2f}".replace(",", " ").replace(".", ",")
+                elif isinstance(value, int):
+                    text = f"{value:,}".replace(",", " ")
+                font = f_bold if bold else f_cell
+                avail = (cx1 - cx0) - px(18)
+                if d.textlength(text, font=font) > avail:
+                    while text and d.textlength(text + "…", font=font) > avail:
                         text = text[:-1]
                     text += "…"
-                draw.text((sc(x + 8), sc(y + (rh - 16) / 2)), text, font=font, fill="#26352e")
+                d.text((cx0 + px(9), cy0 + (cy1 - cy0 - px(17)) / 2), text,
+                       font=font, fill=INK)
             x += cw
         y += rh
 
-    # Sheet tabs
-    tab_y = sheet_h + 20
+    # ---- sheet tabs ---------------------------------------------------
+    tab_y = sheet_h + pad + 2
     cursor = margin
-    for name in wb.sheetnames[:12]:
-        tw = max(78, min(148, len(name) * 9 + 26))
+    f_tab = load_font(12, bold=True)
+    for name in wb.sheetnames[:9]:
+        tw = max(96, min(180, len(name) * 10 + 34))
         active = name == product["sheet"]
-        draw.rounded_rectangle([sc(cursor), sc(tab_y), sc(cursor + tw), sc(tab_y + 28)], radius=6,
-                               fill="#e9f4ed" if active else "#f5f7f6",
-                               outline="#85b99a" if active else "#e1e6e3")
-        twn = draw.textlength(name[:16], font=f_cell)
-        draw.text((sc(cursor + (tw - twn) / 2), sc(tab_y + 9)), name[:16],
-                  font=f_cell, fill="#17633c" if active else "#77827c")
-        cursor += tw + 6
-        if cursor > sheet_w - 80:
+        tx0, ty0 = px(cursor), px(tab_y)
+        tx1, ty1 = px(cursor + tw), px(tab_y + 34)
+        if active:
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9), fill=EMERALD)
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9),
+                                outline=GOLD, width=px(1))
+            col = WHITE
+        else:
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9), fill=(252, 250, 243))
+            d.rounded_rectangle([tx0, ty0, tx1, ty1], radius=px(9),
+                                outline=(222, 214, 194), width=px(1))
+            col = (108, 106, 90)
+        t = name[:18]
+        while d.textlength(t, font=f_tab) > (tx1 - tx0) - px(16) and len(t) > 3:
+            t = t[:-1]
+        twn = d.textlength(t, font=f_tab)
+        d.text((tx0 + ((tx1 - tx0) - twn) / 2, ty0 + ((ty1 - ty0) - px(17)) / 2),
+               t, font=f_tab, fill=col)
+        cursor += tw + 9
+        if cursor > sheet_w - 90:
             break
 
-    img.save(PUBLIC / product["preview"], "PNG")
+    # ---- downsample for crisp anti-aliased output ---------------------
+    out = img.resize((img_w, img_h), Image.LANCZOS)
+    out.save(PUBLIC / product["preview"], "PNG", optimize=True)
 
 
 SKIP_PREVIEWS = "--skip-previews" in sys.argv
@@ -491,83 +614,47 @@ if not SKIP_PREVIEWS:
             continue
         make_preview(product)
 
+from catalog_home import build_home
+from catalog_product import build_product
+
+CARD_TPL = """<article class="card">
+      <a class="preview" href="produtos/__I__.html" aria-label="Ver detalhes da planilha __TITLE__"><img src="__SRC__" alt="Pré-visualização real da folha __SHEET__ da planilha __TITLE__" width="__W__" height="__H__" __LOAD__ decoding="async"><span class="zoom">Folha real</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
+      <div class="card-body"><div class="meta"><span class="tag">__TAG__</span><span class="number">#__I2__</span></div>
+      <h3><a href="produtos/__I__.html">__TITLE__</a></h3><p>__DESC__</p>
+      <div class="buy"><strong>__PRICE__ Kz</strong><div class="buy-actions"><a class="btn-sm btn-out" href="produtos/__I__.html">Detalhes</a><a class="btn-sm btn-wa" href="__WA__">WhatsApp <span aria-hidden="true">↗</span></a></div></div></div></article>"""
+
 cards = []
 for i, p in enumerate(PRODUCTS, 1):
-    page = escape(f"produtos/{i}.html", quote=True)
     price = format(p["price"], ",").replace(",", ".")
     wa = wa_link(i, p, price)
     thumb_rel = make_thumb(p["preview"])
     pw, ph = preview_dimensions(thumb_rel)
-    cards.append(f'''<article class="card">
-      <a class="preview" href="{page}" aria-label="Ver detalhes da planilha {escape(p['title'])}"><img src="{escape(preview_src(thumb_rel))}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="{'high' if i <= 3 else 'auto'}" onerror="this.closest('.preview').classList.add('noimg');this.remove()"><span class="zoom">Pré-visualização da folha original</span><span class="fallback">Pré-visualização indisponível — toque para ver os detalhes</span></a>
-      <div class="card-body"><div class="meta"><span class="tag">{escape(p['tag'])}</span><span class="number">#{i:02d}</span></div>
-      <h2><a href="{page}">{escape(p['title'])}</a></h2><p>{escape(p['description'])}</p>
-      <div class="buy"><strong>{price} Kz</strong><div class="buy-actions"><a class="button wa-mini" href="{wa}">WhatsApp <span aria-hidden="true">↗</span></a><a class="button" href="{page}">Ver detalhes <span aria-hidden="true">→</span></a></div></div></div>
-    </article>''')
+    cards.append(
+        CARD_TPL.replace("__WA__", escape(wa, quote=True))
+        .replace("__SRC__", escape(preview_src(thumb_rel), quote=True))
+        .replace("__DESC__", escape(p["description"]))
+        .replace("__SHEET__", escape(p["sheet"]))
+        .replace("__TITLE__", escape(p["title"]))
+        .replace("__TAG__", escape(p["tag"]))
+        .replace("__PRICE__", price)
+        .replace("__I2__", f"{i:02d}")
+        .replace("__I__", str(i))
+        .replace("__LOAD__", 'fetchpriority="high"' if i <= 3 else 'loading="lazy"')
+        .replace("__W__", str(pw))
+        .replace("__H__", str(ph))
+    )
 
-html = '''<!doctype html>
-<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="Planilhas Excel Premium para negócios, finanças, construção e formação profissional em Angola. Veja imagens originais, preços em Kz e baixe directamente."><title>Planilhas Excel Premium — Angola</title>
-<style>
-:root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}.hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:52px max(24px,calc((100% - 1160px)/2)) 54px}.topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}.dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}.hero h1{max-width:740px;font-size:clamp(36px,6vw,64px);line-height:1.02;letter-spacing:-.055em;margin:22px 0 16px}.hero h1 span{color:var(--lime)}.hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}.download-all{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:10px 14px;border-radius:8px;background:#c8ee79;color:#163a2a;font-size:12px;font-weight:800;text-decoration:none}.download-all:hover{background:#d8f6a1}.hero-foot{display:flex;gap:18px;align-items:center;margin-top:28px;color:#d6e2d9;font-size:13px}.hero-foot b{color:white}.wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin:6px 0 22px}.section-head h2{font-size:25px;letter-spacing:-.04em;margin:0}.section-head p{margin:0;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}.card{background:white;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 7px 24px #14322108;transition:transform .2s,box-shadow .2s}.card:hover{transform:translateY(-3px);box-shadow:0 15px 32px #14322112}.preview{height:258px;display:flex;position:relative;align-items:center;justify-content:center;overflow:hidden;background:#edf1ee;padding:18px}.preview img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 10px #203c2c16)}.preview .fallback{display:none}.preview.noimg .fallback{display:block;position:absolute;inset:0;align-content:center;text-align:center;padding:18px;color:#53645a;font-size:12px;font-weight:650;line-height:1.5;background:#edf1ee;z-index:1}.preview.noimg .zoom{display:none}.zoom{position:absolute;bottom:12px;right:12px;background:#ffffffdd;color:#53645a;border:1px solid #e4ebe6;border-radius:99px;font-size:10px;padding:6px 9px;backdrop-filter:blur(8px)}.card-body{padding:19px 20px 18px}.meta{display:flex;justify-content:space-between;align-items:center}.tag{border-radius:99px;background:#eef6ed;color:#24653f;padding:5px 9px;font-size:10px;font-weight:750}.number{font-size:11px;color:#a2aca6;font-weight:750}.card h2{font-size:20px;line-height:1.2;letter-spacing:-.035em;margin:12px 0 8px}.card h2 a{color:inherit;text-decoration:none}.card h2 a:hover{color:var(--green)}.card p{min-height:46px;color:#68766e;font-size:13px;line-height:1.55;margin:0}.buy{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #edf0ee;margin-top:15px;padding-top:14px}.buy strong{font-size:19px;letter-spacing:-.03em}.buy-actions{display:flex;gap:8px}.button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:10px 14px;border-radius:8px;transition:background .15s}.button:hover{background:#0e4f2e}.button span{margin-left:6px;font-size:15px}.button.wa-mini{background:#c8ee79;color:#163a2a;padding:8px 12px;font-size:11px}.button.wa-mini:hover{background:#d8f6a1}.note{margin-top:27px;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}.note strong{color:#2d4637}footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}@media(max-width:720px){.hero{padding-top:38px;padding-bottom:40px}.grid{grid-template-columns:1fr;gap:16px}.preview{height:235px}.section-head{align-items:start;flex-direction:column;gap:6px}.card p{min-height:0}}@media(min-width:1100px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.preview{height:220px}}
-</style></head><body>
-<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><h1>Planilhas que fazem<br><span>o trabalho por si.</span></h1><p>Ferramentas prontas para usar no Excel, pensadas para a realidade angolana. Veja a pré-visualização da folha original, consulte o preço e peça a sua planilha directamente no WhatsApp.</p><a class="download-all" href="https://wa.me/244942739225?text=Ol%C3%A1%21%20Tenho%20interesse%20em%20comprar%20planilhas%20Excel%20Premium%20para%20Angola.">↗ Pedir no WhatsApp</a><div class="hero-foot"><span><b>10</b> planilhas disponíveis</span><span>·</span><span>Preços em <b>Kwanzas (Kz)</b></span><span>·</span><span>Ficheiros <b>.xlsx</b> entregues pelo WhatsApp</span></div></header>
-<main class="wrap"><div class="section-head"><h2>Escolha a sua planilha</h2><p>Toque em “Ver detalhes” para abrir a página da planilha e pedir pelo WhatsApp.</p></div><div class="grid">''' + "\n".join(cards) + '''</div>
-<div class="note"><strong>Nota:</strong> Cada planilha tem uma página própria com a pré-visualização da folha original, o preço e o passo a passo de como usá-la. As planilhas não estão disponíveis para download: ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização. As imagens são pré-visualizações das folhas existentes nos próprios ficheiros; os nomes das abas visíveis correspondem à planilha original. Abra com Microsoft Excel ou uma aplicação compatível.</div></main><footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer></body></html>'''
-html = html.replace("10</b> planilhas disponíveis", f"{len(PRODUCTS)}</b> planilhas disponíveis")
-(PUBLIC / "index.html").write_text(html, encoding="utf-8")
-
-PROD_STYLES = (
-    ":root{color-scheme:light;--ink:#14281e;--muted:#697970;--line:#e5ebe7;--green:#17633c;--lime:#c8ee79;--paper:#f6f8f5}"
-    "*{box-sizing:border-box}"
-    "body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif}"
-    ".hero{background:radial-gradient(ellipse at 85% 0%,#28563d 0,transparent 35%),#10291e;color:#fff;padding:44px max(24px,calc((100% - 1160px)/2)) 46px}"
-    ".topline{display:flex;align-items:center;gap:10px;color:#c8ee79;font-size:12px;font-weight:800;letter-spacing:.13em;text-transform:uppercase}"
-    ".dot{height:8px;width:8px;border-radius:50%;background:#c8ee79;box-shadow:0 0 14px #c8ee79}"
-    ".crumb{display:inline-flex;align-items:center;margin:16px 0 0;color:#d6e2d9;font-size:12px;font-weight:700;text-decoration:none;transition:color .2s}"
-    ".crumb:hover{color:#fff}"
-    ".hero h1{max-width:760px;font-size:clamp(30px,5vw,52px);line-height:1.05;letter-spacing:-.045em;margin:14px 0 12px}"
-    ".hero p{max-width:650px;color:#d1ddd5;line-height:1.7;font-size:16px;margin:0}"
-    ".cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}"
-    ".button{background:var(--green);color:white;text-decoration:none;font-weight:700;font-size:12px;padding:12px 16px;border-radius:10px;transition:background .15s,transform .15s;display:inline-flex;align-items:center;gap:8px}"
-    ".button span{margin-left:4px;font-size:15px}"
-    ".button.wa{background:#d5ff83;color:#153b28}"
-    ".button.wa:hover{background:#e2ffad;transform:translateY(-1px)}"
-    ".hero-foot{display:flex;gap:18px;align-items:center;margin-top:26px;color:#d6e2d9;font-size:13px;flex-wrap:wrap}"
-    ".hero-foot b{color:#fff}"
-    ".wrap{max-width:1160px;margin:0 auto;padding:34px 24px 64px}"
-    ".preview-block{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px;box-shadow:0 7px 24px #14322108;margin-bottom:36px}"
-    ".preview-block img{display:block;width:100%;max-height:540px;object-fit:contain;border-radius:10px;background:#edf1ee}"
-    ".caption{margin:14px 0 0;color:var(--muted);font-size:12px;text-align:center}"
-    ".steps h2{font-size:24px;letter-spacing:-.035em;margin:0 0 16px}"
-    ".steps ol{margin:0;padding-left:22px;color:#3c4a42;font-size:14px;line-height:2}"
-    ".steps li{margin-bottom:8px}"
-    ".steps li::marker{color:var(--green);font-weight:800}"
-    ".nota{margin:22px 0 0;padding:16px 18px;border:1px solid #e2eae3;border-radius:12px;color:#66756b;font-size:12px;line-height:1.6;background:#fff}"
-    ".nota strong{color:#2d4637}"
-    ".related{margin-top:44px}"
-    ".related h2{font-size:22px;letter-spacing:-.035em;margin:0 0 16px}"
-    ".mini-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}"
-    ".mini{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 4px 16px #14322106;text-decoration:none;color:inherit;display:flex;transition:transform .2s,box-shadow .2s}"
-    ".mini:hover{transform:translateY(-3px);box-shadow:0 10px 24px #1432210d}"
-    ".mini .mi{width:104px;flex:none;background:#edf1ee;display:flex;align-items:center;justify-content:center;height:118px}"
-    ".mini .mi img{width:100%;height:100%;object-fit:contain}"
-    ".mini .mb{padding:12px 14px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0}"
-    ".mini .mb strong{font-size:14px;line-height:1.25}"
-    ".mini .mb span{font-size:12px;color:var(--muted)}"
-    ".mini .mb em{font-style:normal;font-size:11px;font-weight:700;color:var(--green)}"
-    "footer{background:#fff;border-top:1px solid var(--line);padding:22px 24px;color:#7a877f;text-align:center;font-size:11px}"
-    "@media(max-width:720px){.hero{padding-top:36px;padding-bottom:38px}.mini-grid{grid-template-columns:1fr}.steps ol{font-size:13px;line-height:1.9}}"
-)
+home = build_home(PRODUCTS)
+for k, card in enumerate(cards):
+    home = home.replace(f"__CARD__{k}__", card)
+(PUBLIC / "index.html").write_text(home, encoding="utf-8")
 
 def build_product_pages():
     (PUBLIC / "produtos").mkdir(parents=True, exist_ok=True)
     for i, p in enumerate(PRODUCTS, 1):
         steps = STEPS[i - 1]
-        steps_html = "\n".join(f"      <li>{escape(s)}</li>" for s in steps)
-        preview = escape(preview_src(p["preview"], "../"), quote=True)
-        pw, ph = preview_dimensions(p["preview"])
         price = format(p["price"], ",").replace(",", ".")
-        wa = wa_link(i, p, price)
+        wa = escape(wa_link(i, p, price), quote=True)
         rel = []
         for j, q in enumerate(PRODUCTS, 1):
             if j == i or len(rel) == 4:
@@ -576,31 +663,12 @@ def build_product_pages():
             qt = make_thumb(q["preview"])
             qw, qh = preview_dimensions(qt)
             rel.append(
-                f'''      <a class="mini" href="{j}.html"><div class="mi"><img src="{escape(preview_src(qt, '../'))}" alt="Pré-visualização da planilha {escape(q['title'])}" width="{qw}" height="{qh}" decoding="async"></div><div class="mb"><strong>{escape(q['title'])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'''
+                f'      <a class="mini" href="{j}.html"><div class="mi"><img src="../{escape(preview_src(qt))}" alt="Pré-visualização da planilha {escape(q["title"])}" width="{qw}" height="{qh}" loading="lazy" decoding="async"></div><div class="mb"><strong>{escape(q["title"])}</strong><span>{q_price} Kz</span><em>Ver detalhes →</em></div></a>'
             )
-        page_html = f'''<!doctype html>
-<html lang="pt-AO"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#10291e"><meta name="description" content="{escape(p['description'])} Veja a pré-visualização da folha original da planilha {escape(p['title'])} em Excel por {price} Kz. Peça pelo WhatsApp."><title>{escape(p['title'])} — Planilhas Excel Premium Angola</title>
-<style>{PROD_STYLES}</style></head>
-<body>
-<header class="hero"><div class="topline"><i class="dot"></i> Colecção Excel Premium · Angola</div><a class="crumb" href="../index.html">← Ver todas as planilhas</a>
-<h1>{escape(p['title'])}</h1>
-<p>{escape(p['description'])}</p>
-<div class="cta-row"><a class="button wa" href="{wa}">Pedir no WhatsApp <span aria-hidden="true">↗</span></a></div>
-<div class="hero-foot"><span><b>{price} Kz</b></span><span>·</span><span>{escape(p['tag'])}</span><span>·</span><span>Planilha #{i:02d}</span><span>·</span><span>Ficheiro <b>.xlsx</b> entregue pelo WhatsApp</span></div></header>
-<main class="wrap">
-<section class="preview-block"><img src="{preview}" alt="Pré-visualização real da folha {escape(p['sheet'])} da planilha {escape(p['title'])}" width="{pw}" height="{ph}" decoding="async" fetchpriority="high"><p class="caption">Pré-visualização da folha original — aba “{escape(p['sheet'])}” da planilha {escape(p['title'])}.</p></section>
-<section class="steps"><h2>Como usar esta planilha</h2>
-<ol>
-{steps_html}
-</ol></section>
-<section class="nota"><strong>Como receber a planilha:</strong> ao confirmar a compra no WhatsApp, o ficheiro Excel (.xlsx) é entregue directamente na conversa, junto com as instruções de utilização.</section>
-<section class="related"><h2>Outras planilhas</h2><div class="mini-grid">
-{chr(10).join(rel)}
-</div></section>
-</main>
-<footer>Planilhas Excel Premium · Feito para Angola · Valores indicados em Kz</footer>
-</body></html>'''
+        pw, ph = preview_dimensions(p["preview"])
+        page_html = build_product(i, p, price, wa, steps, rel, pw, ph)
         (PUBLIC / "produtos" / f"{i}.html").write_text(page_html, encoding="utf-8")
+
 
 build_product_pages()
 print(f"Generated {len(PRODUCTS)} previews, public/index.html and {len(PRODUCTS)} product pages")
